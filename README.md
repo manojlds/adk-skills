@@ -20,31 +20,34 @@ pip install adk-skills
 
 ```python
 from google.adk.agents import Agent
-from adk_skills import SkillsManager
+from adk_skills import SkillsRegistry
 
-# Load skills
-skills = SkillsManager()
-skills.load_from_directory("./skills")
+# Discover skills
+registry = SkillsRegistry()
+registry.discover(["./skills"])
 
-# Create ADK agent with skills
+# Create ADK agent with skills support
 agent = Agent(
     name="assistant",
     model="gemini-2.5-flash",
-    instruction=skills.get_combined_instructions(),
-    tools=skills.get_tools()
+    instruction="You are a helpful assistant.",
+    tools=[
+        registry.create_use_skill_tool(),      # Loads skills on-demand
+        registry.create_run_script_tool(),     # Optional: run skill scripts
+    ]
 )
 
-# Your agent now has skill-powered capabilities!
+# Agent can now discover and activate skills as needed!
 ```
 
 ## ✨ Features
 
-- 🎯 **Standard Compliance**: Fully compatible with [agentskills.io](https://agentskills.io) specification
-- 📦 **Easy Loading**: Discover and load skills from directories
-- 🔧 **Script Execution**: Convert Python and Bash scripts into ADK tools
-- 🚀 **Simple Integration**: 5-line integration with existing ADK agents
+- 🎯 **Standard Compliance**: 100% compatible with [agentskills.io](https://agentskills.io) specification
+- 📦 **On-Demand Loading**: Skills activated only when needed (~50-100 tokens per skill)
+- 🔧 **Script Execution**: Execute Python and Bash scripts from skills
+- 🚀 **Simple Integration**: Tool-based pattern following OpenCode's approach
 - 🔒 **Secure**: Sandboxed script execution with timeouts and resource limits
-- 📚 **Well Documented**: Comprehensive guides and examples
+- 📚 **Well Documented**: Based on reference implementations
 
 ## 📖 What are Agent Skills?
 
@@ -85,50 +88,66 @@ Use this skill to extract structured data from websites.
 
 ## 🎓 Examples
 
-### Load a Single Skill
+### Discover Skills
 
 ```python
-from adk_skills import SkillsManager
+from adk_skills import SkillsRegistry
 
-skills = SkillsManager()
-skill = skills.load_skill("./skills/web-scraper")
+registry = SkillsRegistry()
+count = registry.discover(["./skills", "~/.adk/skills"])
 
-print(f"Loaded: {skill.name}")
-print(f"Description: {skill.description}")
+print(f"Found {count} skills")
+for meta in registry.list_metadata():
+    print(f"  - {meta.name}: {meta.description}")
 ```
 
-### Use Skills with Scripts
+### Tool-Based Activation
 
 ```python
 from google.adk.agents import Agent
-from adk_skills import with_skills
+from adk_skills import SkillsRegistry
 
-# Create agent with calculator skill (includes scripts)
-agent = with_skills(
-    Agent(name="math_assistant", model="gemini-2.5-flash"),
-    skills=["calculator"]
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+
+# Skills are listed in the use_skill tool's description
+# Agent activates them on-demand by calling the tool
+agent = Agent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    tools=[
+        registry.create_use_skill_tool(),    # <available_skills> in description
+        registry.create_run_script_tool(),
+    ]
 )
 
-# Agent can now use calculator scripts as tools
+# When agent calls use_skill(name="calculator"),
+# it receives the full skill instructions
 ```
 
 ### Multi-Agent with Different Skills
 
 ```python
-# Customer service agent with specialized skills
+# Each agent gets its own registry with different skills
+
+# Customer service agent
+cs_registry = SkillsRegistry()
+cs_registry.discover(["./skills/customer-service"])
+
 cs_agent = Agent(
     name="customer_service",
     model="gemini-2.5-flash",
-    instruction=skills.get_instructions(["handle-complaints", "check-orders"]),
-    tools=skills.get_tools(["handle-complaints", "check-orders"])
+    tools=[cs_registry.create_use_skill_tool()]
 )
 
-# Research agent with different skills
+# Research agent
+research_registry = SkillsRegistry()
+research_registry.discover(["./skills/research"])
+
 research_agent = Agent(
     name="researcher",
     model="gemini-2.5-flash",
-    instruction=skills.get_instructions(["web-scraper", "data-analyzer"]),
-    tools=skills.get_tools(["web-scraper", "data-analyzer"])
+    tools=[research_registry.create_use_skill_tool()]
 )
 ```
 

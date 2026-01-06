@@ -1,25 +1,57 @@
-# ADK Skills - Design Document
+# ADK Skills - Design Document (Revised)
 
 ## Overview
 
-`adk-skills` is a Python library that brings [Agent Skills](https://agentskills.io) support to Google's [Agent Development Kit (ADK)](https://github.com/google/adk-python). It enables ADK agents to discover, load, and use skills in the standard Agent Skills format, making capabilities portable across AI platforms.
+`adk-skills` is a Python library that brings [Agent Skills](https://agentskills.io) support to Google's [Agent Development Kit (ADK)](https://github.com/google/adk-python). It enables ADK agents to discover and activate skills on-demand using the standard Agent Skills format, making capabilities portable across AI platforms.
 
 ## Problem Statement
 
-- **ADK agents** need reusable, packaged capabilities beyond individual tools
-- **Agent Skills** provide a standardized format for packaging agent capabilities
+- **ADK agents** need reusable, packaged capabilities for specialized tasks
+- **Agent Skills** provide a standardized format (agentskills.io) for packaging agent capabilities
 - Currently, no bridge exists between the Agent Skills standard and ADK
 - Developers want to use the same skills across Claude, ADK, and other platforms
 
+## How Agent Skills Actually Work
+
+After studying the [reference implementation](https://github.com/agentskills/agentskills/tree/main/skills-ref) and [OpenCode's integration](https://github.com/anomalyco/opencode), the correct pattern is:
+
+### ❌ NOT This (Initial Misconception)
+```python
+# WRONG: Pre-injecting all skill content bloats context
+agent = Agent(
+    instruction=skills.get_combined_instructions(),  # ❌ Bloats context
+    tools=skills.get_tools()  # ❌ Creates tools upfront
+)
+```
+
+### ✅ Correct Pattern: On-Demand Activation
+
+1. **Discovery**: Scan directories for SKILL.md files, extract metadata (name + description)
+2. **Tool Integration**: Provide a `use_skill` tool with `<available_skills>` in its description
+3. **Activation**: When agent calls `use_skill("skill-name")`, return full SKILL.md content
+4. **Optional**: Provide separate tools for script execution
+
+```python
+# CORRECT: Lightweight metadata + on-demand activation
+agent = Agent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    tools=[
+        skills.create_use_skill_tool(),      # Lists available skills, loads on demand
+        skills.create_run_script_tool(),     # Optional: Execute skill scripts
+    ]
+)
+```
+
 ## Goals
 
-1. **Skills Discovery**: Automatically discover skills from directories, packages, or registries
-2. **Skills Loading**: Parse SKILL.md files and integrate them into ADK agents
-3. **Instruction Integration**: Inject skill instructions into agent system prompts
-4. **Script Execution**: Convert skill scripts into ADK tools
-5. **Resource Management**: Handle references and assets appropriately
-6. **Standard Compliance**: Full compatibility with agentskills.io specification
-7. **Developer Experience**: Simple, Pythonic API for ADK developers
+1. **Skills Discovery**: Scan directories for SKILL.md files (~50-100 tokens per skill)
+2. **Metadata Extraction**: Parse frontmatter (name, description) for skill listing
+3. **On-Demand Loading**: Load full instructions only when agent activates a skill
+4. **Tool-Based Integration**: Provide ADK tools for skill activation and script execution
+5. **Resource Access**: Enable access to scripts/, references/, assets/ directories
+6. **Standard Compliance**: 100% compatible with agentskills.io specification
+7. **Developer Experience**: Simple, Pythonic API matching OpenCode's pattern
 
 ## Architecture
 
@@ -30,355 +62,419 @@ adk-skills/
 ├── adk_skills/
 │   ├── __init__.py
 │   ├── core/
-│   │   ├── skill.py           # Skill data model
-│   │   ├── parser.py          # SKILL.md parser
+│   │   ├── skill.py           # Skill data model (metadata + content)
+│   │   ├── parser.py          # SKILL.md parser (frontmatter + body)
 │   │   ├── loader.py          # Skills discovery & loading
 │   │   └── validator.py       # Spec validation
-│   ├── integration/
-│   │   ├── agent_adapter.py   # ADK Agent integration
-│   │   ├── tool_adapter.py    # Script → Tool conversion
-│   │   └── context_manager.py # References & assets handling
+│   ├── tools/
+│   │   ├── use_skill.py       # Tool: activate a skill
+│   │   ├── run_script.py      # Tool: execute skill scripts
+│   │   └── read_reference.py  # Tool: read skill references
 │   ├── executors/
 │   │   ├── python_executor.py # Execute Python scripts
 │   │   └── bash_executor.py   # Execute Bash scripts
 │   └── utils/
 │       ├── yaml_parser.py     # YAML frontmatter parsing
 │       └── markdown.py        # Markdown processing
-├── tests/
-├── examples/
-├── docs/
-└── pyproject.toml
 ```
 
 ### Data Model
 
 ```python
 @dataclass
-class Skill:
-    """Represents a loaded Agent Skill"""
+class SkillMetadata:
+    """Lightweight metadata for skill discovery (50-100 tokens)"""
     name: str                          # Required: skill identifier
-    description: str                   # Required: what skill does
-    instructions: str                  # Markdown body content
-    license: Optional[str]             # License info
-    compatibility: Optional[str]       # Environment requirements
-    metadata: Dict[str, Any]           # Custom metadata
-    allowed_tools: List[str]           # Pre-approved tools
+    description: str                   # Required: when to use this skill
+    location: Path                     # Path to SKILL.md file
 
-    # Directory structure
-    skill_dir: Path                    # Root skill directory
-    scripts: List[Path]                # Executable scripts
-    references: List[Path]             # Reference documents
-    assets: List[Path]                 # Template/binary files
+    # Optional frontmatter fields
+    license: Optional[str] = None
+    compatibility: Optional[str] = None
+    allowed_tools: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Skill:
+    """Full skill with content (loaded on-demand)"""
+    # Metadata
+    name: str
+    description: str
+    location: Path
+    skill_dir: Path                    # Base directory
+
+    # Full content (loaded on activation)
+    instructions: str                  # Full markdown body
+
+    # Optional fields
+    license: Optional[str] = None
+    compatibility: Optional[str] = None
+    allowed_tools: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # Directory structure (discovered lazily)
+    scripts_dir: Optional[Path] = None      # scripts/ if exists
+    references_dir: Optional[Path] = None   # references/ if exists
+    assets_dir: Optional[Path] = None       # assets/ if exists
 ```
 
-## Integration Patterns
+## Integration Pattern (Based on OpenCode)
 
-### Pattern 1: Agent-Level Skills
-
-Skills modify the agent's instruction and add tools:
-
-```python
-from google.adk.agents import Agent
-from adk_skills import SkillsManager
-
-# Initialize skills manager
-skills = SkillsManager()
-
-# Load skills from directory
-skills.load_from_directory("./skills")
-
-# Create agent with skills
-root_agent = Agent(
-    name="assistant",
-    model="gemini-2.5-flash",
-    instruction=skills.get_combined_instructions(),
-    tools=skills.get_tools()
-)
-```
-
-### Pattern 2: Dynamic Skills Loading
-
-Skills can be loaded/unloaded at runtime:
-
-```python
-from adk_skills import SkillsManager, with_skills
-
-skills = SkillsManager()
-
-# Load specific skills
-skills.load_skill("my-skill")
-skills.load_skill("another-skill")
-
-# Create enhanced agent
-agent = with_skills(
-    Agent(name="assistant", model="gemini-2.5-flash"),
-    skills=["my-skill", "another-skill"]
-)
-```
-
-### Pattern 3: Skill Discovery
-
-Auto-discover skills from multiple sources:
+### Step 1: Skills Discovery & Registry
 
 ```python
 from adk_skills import SkillsRegistry
 
+# Initialize registry
 registry = SkillsRegistry()
 
-# Auto-discover from common locations
+# Discover skills from directories
 registry.discover([
-    "./skills",                    # Local directory
-    "~/.adk-skills",              # User skills
-    "github:anthropics/skills",   # GitHub repo (future)
+    "./skills",           # Project skills
+    "~/.adk/skills",     # User skills
 ])
 
-# List available skills
-for skill in registry.list_skills():
-    print(f"{skill.name}: {skill.description}")
+# Registry now has lightweight metadata for all skills
+print(f"Found {len(registry)} skills")
+for meta in registry.list_metadata():
+    print(f"  - {meta.name}: {meta.description}")
 ```
+
+### Step 2: Create ADK Agent with Skills Support
+
+```python
+from google.adk.agents import Agent
+
+# Create use_skill tool
+use_skill_tool = registry.create_use_skill_tool()
+
+# The tool's description contains <available_skills> block
+# Agent sees available skills without loading full content
+
+agent = Agent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    instruction="You are a helpful assistant.",
+    tools=[
+        use_skill_tool,                      # Main skill activation tool
+        registry.create_run_script_tool(),   # Optional: run scripts
+    ]
+)
+```
+
+### Step 3: Agent Activates Skill On-Demand
+
+When agent needs a skill:
+
+```python
+# Agent calls: use_skill(name="pdf-processing")
+#
+# Tool execution:
+# 1. Loads full SKILL.md content
+# 2. Returns instructions + base directory
+# 3. Agent now has detailed guidance for the task
+```
+
+## Tool Design
+
+### Tool 1: `use_skill`
+
+**Purpose**: Activate a skill by loading its full instructions
+
+**Tool Description** (what agent sees):
+```
+Load a skill to get detailed instructions for a specific task.
+Skills provide specialized knowledge and step-by-step guidance.
+Use this when a task matches an available skill's description.
+
+<available_skills>
+  <skill>
+    <name>pdf-processing</name>
+    <description>Extract text and tables from PDF files, fill forms, merge documents</description>
+  </skill>
+  <skill>
+    <name>web-scraper</name>
+    <description>Extract content from websites efficiently and ethically</description>
+  </skill>
+</available_skills>
+```
+
+**Parameters**:
+```python
+{
+    "name": "skill-name"  # Required: skill identifier
+}
+```
+
+**Returns**:
+```python
+{
+    "skill_name": "pdf-processing",
+    "base_directory": "/path/to/skills/pdf-processing",
+    "instructions": "# PDF Processing Skill\n\n[Full SKILL.md content...]",
+    "has_scripts": True,
+    "has_references": True,
+}
+```
+
+### Tool 2: `run_script` (Optional)
+
+**Purpose**: Execute a script from an activated skill
+
+**Parameters**:
+```python
+{
+    "skill": "pdf-processing",
+    "script": "extract_text.py",
+    "args": {
+        "file": "/path/to/document.pdf"
+    }
+}
+```
+
+**Returns**: Script output (stdout/stderr)
+
+### Tool 3: `read_reference` (Optional)
+
+**Purpose**: Read a reference document from a skill
+
+**Parameters**:
+```python
+{
+    "skill": "pdf-processing",
+    "reference": "api_docs.md"
+}
+```
+
+**Returns**: Reference file content
 
 ## Skills Processing Pipeline
 
 ```
-1. Discovery
-   ├─ Scan directories for SKILL.md files
-   ├─ Identify skill directory structure
-   └─ Build skill inventory
+1. Discovery (Startup)
+   ├─ Scan configured directories
+   ├─ Find SKILL.md files
+   ├─ Parse frontmatter only (name, description)
+   └─ Store in registry (~50-100 tokens per skill)
 
-2. Parsing
-   ├─ Extract YAML frontmatter
-   ├─ Validate required fields (name, description)
-   ├─ Parse markdown instructions
-   └─ Identify scripts, references, assets
+2. Tool Creation
+   ├─ Generate use_skill tool
+   ├─ Embed <available_skills> in tool description
+   └─ Register with ADK agent
 
-3. Validation
-   ├─ Check spec compliance
-   ├─ Verify script executability
-   ├─ Validate file references
-   └─ Check compatibility requirements
+3. Skill Activation (On-Demand)
+   ├─ Agent calls use_skill(name="...")
+   ├─ Load full SKILL.md content
+   ├─ Parse markdown body
+   ├─ Discover subdirectories (scripts/, references/, assets/)
+   └─ Return full instructions to agent
 
-4. Integration
-   ├─ Combine skill instructions into agent prompt
-   ├─ Convert scripts to ADK tools
-   ├─ Load references into context (if needed)
-   └─ Register assets for access
-
-5. Execution
-   ├─ Agent receives skill-enhanced instructions
-   ├─ Agent can invoke skill-provided tools
-   └─ Tools execute scripts in secure sandbox
+4. Script Execution (Optional)
+   ├─ Agent calls run_script(skill="...", script="...")
+   ├─ Locate script in skill's scripts/ directory
+   ├─ Execute with provided arguments
+   └─ Return output to agent
 ```
-
-## Script Execution
-
-Skills can contain Python and Bash scripts that become ADK tools:
-
-```python
-# scripts/fetch_data.py becomes a tool
-def fetch_data(source: str) -> dict:
-    """Fetch data from source (auto-generated from script)"""
-    result = execute_python_script(
-        script_path="scripts/fetch_data.py",
-        args={"source": source}
-    )
-    return result
-```
-
-### Security Considerations
-
-- **Sandboxing**: Scripts run in isolated environments
-- **Validation**: Input/output validation for all scripts
-- **Permissions**: Explicit approval for file system/network access
-- **Timeout**: Execution time limits
-- **Resource Limits**: Memory and CPU constraints
 
 ## API Design
 
-### SkillsManager API
+### SkillsRegistry API
 
 ```python
-class SkillsManager:
+class SkillsRegistry:
     """Main interface for managing skills in ADK"""
 
     def __init__(self, config: Optional[SkillsConfig] = None):
         """Initialize with optional configuration"""
 
-    def load_from_directory(self, path: str | Path) -> List[Skill]:
-        """Load all skills from a directory"""
+    def discover(self, directories: List[str | Path]) -> int:
+        """
+        Discover skills from directories.
+        Returns number of skills found.
+        Parses only frontmatter for efficiency.
+        """
 
-    def load_skill(self, path: str | Path) -> Skill:
-        """Load a single skill"""
+    def list_metadata(self) -> List[SkillMetadata]:
+        """List all discovered skills (lightweight metadata)"""
 
-    def get_skill(self, name: str) -> Optional[Skill]:
-        """Get loaded skill by name"""
+    def get_metadata(self, name: str) -> Optional[SkillMetadata]:
+        """Get metadata for a specific skill"""
 
-    def list_skills(self) -> List[Skill]:
-        """List all loaded skills"""
+    def load_skill(self, name: str) -> Skill:
+        """
+        Load full skill content (on-demand).
+        Parses complete SKILL.md including body.
+        """
 
-    def get_combined_instructions(self, skills: Optional[List[str]] = None) -> str:
-        """Get combined instructions for agent"""
+    def create_use_skill_tool(self) -> Callable:
+        """
+        Create ADK tool for skill activation.
+        Tool description includes <available_skills> block.
+        """
 
-    def get_tools(self, skills: Optional[List[str]] = None) -> List[Callable]:
-        """Get all tools from skills"""
+    def create_run_script_tool(self) -> Callable:
+        """Create ADK tool for script execution"""
 
-    def unload_skill(self, name: str) -> bool:
-        """Unload a skill"""
+    def create_read_reference_tool(self) -> Callable:
+        """Create ADK tool for reading references"""
 ```
 
 ### Helper Functions
 
 ```python
-def with_skills(agent: Agent, skills: List[str] | SkillsManager) -> Agent:
-    """Enhance an ADK agent with skills"""
+def with_skills(agent: Agent, directories: List[str | Path]) -> Agent:
+    """
+    Convenience function to add skills support to an existing agent.
+
+    Example:
+        agent = Agent(name="assistant", model="gemini-2.5-flash")
+        agent = with_skills(agent, ["./skills", "~/.adk/skills"])
+    """
 
 def validate_skill(skill_path: Path) -> ValidationResult:
-    """Validate a skill against the spec"""
+    """Validate a skill directory against the spec"""
 
 def create_skill_template(output_dir: Path, name: str) -> None:
     """Create a new skill from template"""
 ```
 
-## Configuration
-
-```python
-@dataclass
-class SkillsConfig:
-    """Configuration for skills system"""
-
-    # Discovery
-    skills_directories: List[Path] = field(default_factory=list)
-    auto_discover: bool = True
-
-    # Execution
-    enable_scripts: bool = True
-    script_timeout: int = 30  # seconds
-    sandbox_mode: bool = True
-
-    # Integration
-    inject_instructions: bool = True
-    prefix_skill_name: bool = True
-    combine_strategy: str = "concatenate"  # or "hierarchical"
-
-    # Validation
-    strict_validation: bool = True
-    allow_experimental: bool = False
-```
-
 ## Example Use Cases
 
-### Use Case 1: Web Scraping Skill
+### Use Case 1: Research Assistant with Skills
 
-```
-web-scraper/
-├── SKILL.md
-├── scripts/
-│   └── scrape.py
-└── references/
-    └── best_practices.md
-```
-
-**SKILL.md:**
-```markdown
----
-name: web-scraper
-description: Extract content from websites efficiently and ethically
-compatibility: Requires Python requests and beautifulsoup4
----
-
-# Web Scraping Skill
-
-Use this skill to extract structured data from websites.
-
-## When to Use
-- Extracting product information
-- Gathering research data
-- Monitoring content changes
-
-## Guidelines
-- Always respect robots.txt
-- Use rate limiting
-- Cache responses when appropriate
-```
-
-**Integration:**
 ```python
-skills.load_skill("./skills/web-scraper")
+from google.adk.agents import Agent
+from adk_skills import SkillsRegistry
+
+# Discover skills
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+
+# Create agent
 agent = Agent(
     name="research_assistant",
     model="gemini-2.5-flash",
-    instruction=skills.get_combined_instructions(),
-    tools=skills.get_tools()
+    instruction="You are a research assistant. Use available skills for specialized tasks.",
+    tools=[
+        registry.create_use_skill_tool(),
+        registry.create_run_script_tool(),
+        # ... other tools (web search, etc.)
+    ]
 )
-# Agent now has scraping instructions and scrape.py as a tool
+
+# Agent workflow:
+# 1. User: "Extract data from this research paper PDF"
+# 2. Agent sees pdf-processing in available_skills
+# 3. Agent calls use_skill(name="pdf-processing")
+# 4. Gets detailed instructions for PDF processing
+# 5. Agent calls run_script(skill="pdf-processing", script="extract.py", args={...})
+# 6. Returns results to user
 ```
 
-### Use Case 2: Enterprise Skills Repository
+### Use Case 2: Multi-Agent System with Specialized Skills
 
 ```python
-from adk_skills import SkillsRegistry
-
-# Corporate skills repository
-registry = SkillsRegistry()
-registry.add_source("git+https://github.com/company/skills.git")
-
-# Create specialized agents
-customer_service_agent = Agent(
-    name="customer_service",
+# Coordinator agent - no skills
+coordinator = Agent(
+    name="coordinator",
     model="gemini-2.5-flash",
-    instruction=registry.get_instructions([
-        "handle-complaints",
-        "check-order-status",
-        "process-refunds"
-    ]),
-    tools=registry.get_tools([
-        "handle-complaints",
-        "check-order-status",
-        "process-refunds"
-    ])
+    sub_agents=[research_agent, code_agent]
+)
+
+# Research agent - web scraping skills
+research_registry = SkillsRegistry()
+research_registry.discover(["./skills/research"])
+
+research_agent = Agent(
+    name="researcher",
+    model="gemini-2.5-flash",
+    tools=[research_registry.create_use_skill_tool()]
+)
+
+# Code agent - development skills
+code_registry = SkillsRegistry()
+code_registry.discover(["./skills/development"])
+
+code_agent = Agent(
+    name="developer",
+    model="gemini-2.5-flash",
+    tools=[code_registry.create_use_skill_tool()]
+)
+```
+
+### Use Case 3: Filesystem-Based Pattern (Alternative)
+
+For agents with filesystem access (like Claude Code), an alternative pattern:
+
+```python
+# Simpler pattern: Agent reads SKILL.md files directly
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+
+# Just inject metadata into system prompt
+agent = Agent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    instruction=f"""
+    You are a helpful assistant with access to the filesystem.
+
+    {registry.to_available_skills_xml()}
+
+    To activate a skill, read its SKILL.md file using the Read tool.
+    """,
+    tools=[read_tool, write_tool, bash_tool, ...]
 )
 ```
 
 ## Technical Decisions
 
-### 1. Instruction Injection Strategy
+### 1. Skills Activation Strategy
 
-**Decision**: Concatenate skill instructions with agent instructions
+**Decision**: Tool-based on-demand activation (not pre-injection)
 
-**Options Considered:**
-- **Concatenation** (chosen): Append skill instructions to agent's base instruction
-- **Hierarchical**: Nest skills under sections
-- **Dynamic**: Load into context only when needed
+**Rationale**:
+- Keeps context small (~50-100 tokens per skill)
+- Scales to hundreds of skills
+- Agent only loads what it needs
+- Matches reference implementation pattern
 
-**Rationale**: Simple, predictable, works with ADK's instruction parameter
+### 2. Metadata vs Full Content
 
-### 2. Script-to-Tool Conversion
+**Decision**: Separate `SkillMetadata` (discovery) and `Skill` (activation)
 
-**Decision**: Wrap scripts as Python callables with type hints
+**Rationale**:
+- Efficient discovery without parsing full content
+- Lazy loading of instructions
+- Clearer separation of concerns
 
-**Approach:**
-- Parse script docstrings for function signatures
-- Generate wrapper functions with proper types
-- Use subprocess for bash, direct import for Python
-- Return structured data (JSON-serializable)
+### 3. Tool Description for Skill Listing
 
-### 3. References Handling
+**Decision**: Embed `<available_skills>` in tool description (not system prompt)
 
-**Decision**: Make references available but don't auto-inject
+**Rationale**:
+- Follows OpenCode's proven pattern
+- Tool description is contextually relevant
+- Easier to manage skill visibility per agent
 
-**Rationale:**
-- Large reference docs can bloat context
-- Let agent request via tools if needed
-- Provide helper: `get_reference(skill_name, filename)`
+### 4. Script Execution
 
-### 4. Compatibility Checking
+**Decision**: Separate `run_script` tool (not automatic conversion)
 
-**Decision**: Parse and warn, don't block
+**Rationale**:
+- Scripts are optional skill components
+- Explicit execution is more secure
+- Agent decides when to run scripts
+- Simpler implementation
 
-**Approach:**
-- Parse compatibility field
-- Check system capabilities
-- Emit warnings for mismatches
-- Let developers decide to proceed
+### 5. Directory Structure Discovery
+
+**Decision**: Discover scripts/references/assets lazily on activation
+
+**Rationale**:
+- Not needed during initial discovery
+- Reduces filesystem I/O
+- Only matters when skill is activated
 
 ## Dependencies
 
@@ -386,10 +482,8 @@ customer_service_agent = Agent(
 [project]
 dependencies = [
     "google-adk>=1.0.0",      # ADK framework
-    "pyyaml>=6.0",            # YAML parsing
-    "markdown>=3.4",          # Markdown processing
+    "pyyaml>=6.0",            # YAML parsing (or strictyaml)
     "pydantic>=2.0",          # Data validation
-    "click>=8.0",             # CLI interface
 ]
 
 [project.optional-dependencies]
@@ -402,9 +496,26 @@ dev = [
 ]
 ```
 
+## Security Considerations
+
+### Script Execution
+- **Sandboxing**: Run in isolated subprocess with resource limits
+- **Timeouts**: Default 30s execution timeout
+- **Validation**: Verify script exists in skill directory
+- **User Confirmation**: Optional permission system (like OpenCode)
+
+### Path Traversal
+- **Validation**: Ensure all paths stay within skill directory
+- **Sanitization**: Reject `..` and absolute paths in script/reference names
+
+### Malicious Skills
+- **Allowlisting**: Only load from trusted directories
+- **Validation**: Strict YAML and markdown parsing
+- **Logging**: Track all skill activations and script executions
+
 ## Standards Compliance
 
-This library implements the Agent Skills specification version 1.0:
+Implements Agent Skills specification v1.0:
 
 - ✅ SKILL.md with YAML frontmatter
 - ✅ Required fields: name, description
@@ -415,53 +526,73 @@ This library implements the Agent Skills specification version 1.0:
 - ✅ Name validation (lowercase, hyphens, 64 chars max)
 - ✅ Description validation (1024 chars max)
 
+## Comparison with Reference Implementations
+
+### skills-ref (Python)
+```python
+# Their approach
+from skills_ref import to_prompt, read_properties, validate
+
+# Generate XML for system prompt
+prompt = to_prompt([Path("skill-a"), Path("skill-b")])
+
+# Our approach (similar but ADK-focused)
+registry = SkillsRegistry()
+registry.discover([Path("skill-a"), Path("skill-b")])
+tool = registry.create_use_skill_tool()  # XML in tool description
+```
+
+### OpenCode (TypeScript)
+```typescript
+// Their approach
+const SkillTool = Tool.define("skill", async (ctx) => {
+  const skills = await Skill.all()
+  const description = `<available_skills>...</available_skills>`
+
+  return {
+    description,
+    async execute(params) {
+      const skill = await Skill.get(params.name)
+      const content = await loadSkillContent(skill.location)
+      return { output: content }
+    }
+  }
+})
+
+// Our approach (Python equivalent)
+def create_use_skill_tool(registry):
+    def use_skill(name: str) -> dict:
+        """
+        <available_skills>
+        ... (from registry metadata)
+        </available_skills>
+        """
+        skill = registry.load_skill(name)
+        return {
+            "instructions": skill.instructions,
+            "base_directory": str(skill.skill_dir)
+        }
+    return use_skill
+```
+
 ## Future Enhancements
 
 ### Phase 2
-- **Remote Skills**: Load from GitHub, package registries
-- **Skills Marketplace**: Discover and install from skillsmp.com
-- **Skill Composition**: Combine multiple skills intelligently
-- **Version Management**: Support skill versioning
+- Remote skills (GitHub, package registries)
+- Skills versioning and updates
+- Skill dependencies
 
 ### Phase 3
-- **Multi-Agent Skills**: Skills that spawn sub-agents
-- **Skill Analytics**: Track skill usage and effectiveness
-- **Auto-Generation**: Create skills from examples
-- **IDE Integration**: VS Code extension for skill development
-
-## Testing Strategy
-
-1. **Unit Tests**: Each component tested in isolation
-2. **Integration Tests**: Full pipeline with sample skills
-3. **Compliance Tests**: Validation against agentskills.io spec
-4. **Security Tests**: Script execution sandboxing
-5. **Performance Tests**: Large skill collections
-
-## Documentation Plan
-
-- **README.md**: Quick start and examples
-- **API Reference**: Auto-generated from docstrings
-- **User Guide**: Detailed usage patterns
-- **Skill Developer Guide**: Creating skills for ADK
-- **Migration Guide**: Adapting Claude skills to ADK
-
-## Success Metrics
-
-1. **Functionality**: Load and execute skills per spec
-2. **Compatibility**: Works with existing Agent Skills
-3. **Performance**: <100ms overhead per skill load
-4. **Usability**: 5-line integration for basic use case
-5. **Adoption**: Community creates ADK-specific skills
-
-## References
-
-- Agent Skills Specification: https://agentskills.io/specification
-- Google ADK Documentation: https://google.github.io/adk-docs/
-- ADK Python GitHub: https://github.com/google/adk-python
-- Anthropic Skills Repository: https://github.com/anthropics/skills
+- Skills marketplace integration
+- Usage analytics
+- Auto-discovery from MCP servers
 
 ---
 
-**Document Version**: 1.0
+**Document Version**: 2.0 (Revised)
 **Last Updated**: 2026-01-06
 **Status**: Design Phase
+**References**:
+- https://agentskills.io/specification
+- https://github.com/agentskills/agentskills/tree/main/skills-ref
+- https://github.com/anomalyco/opencode (skill integration)
