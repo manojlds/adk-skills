@@ -1,14 +1,14 @@
 """YAML frontmatter parser for SKILL.md files."""
 
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any
 
 import yaml
 
 from adk_skills.exceptions import SkillParseError
 
 
-def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
+def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     """Parse YAML frontmatter from SKILL.md content.
 
     Args:
@@ -38,7 +38,7 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
     try:
         metadata = yaml.safe_load(frontmatter_str)
     except yaml.YAMLError as e:
-        raise SkillParseError(f"Invalid YAML in frontmatter: {e}")
+        raise SkillParseError(f"Invalid YAML in frontmatter: {e}") from e
 
     if metadata is None:
         raise SkillParseError("SKILL.md frontmatter is empty")
@@ -53,7 +53,7 @@ def parse_frontmatter(content: str) -> Tuple[Dict[str, Any], str]:
     return metadata, body
 
 
-def extract_frontmatter(file_path: Path) -> Dict[str, Any]:
+def extract_frontmatter(file_path: Path) -> dict[str, Any]:
     """Extract only the YAML frontmatter from a SKILL.md file.
 
     This is a fast operation used during skills discovery.
@@ -69,10 +69,10 @@ def extract_frontmatter(file_path: Path) -> Dict[str, Any]:
     """
     try:
         content = file_path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        raise SkillParseError(f"SKILL.md not found: {file_path}")
+    except FileNotFoundError as e:
+        raise SkillParseError(f"SKILL.md not found: {file_path}") from e
     except Exception as e:
-        raise SkillParseError(f"Error reading {file_path}: {e}")
+        raise SkillParseError(f"Error reading {file_path}: {e}") from e
 
     metadata, _ = parse_frontmatter(content)
     return metadata

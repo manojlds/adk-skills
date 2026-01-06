@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 
 @dataclass
@@ -30,11 +30,11 @@ class SkillMetadata:
     license: Optional[str] = None
     compatibility: Optional[str] = None
     allowed_tools: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary, excluding None values."""
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "name": self.name,
             "description": self.description,
             "location": str(self.location),
@@ -87,7 +87,7 @@ class Skill:
     license: Optional[str] = None
     compatibility: Optional[str] = None
     allowed_tools: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     # Directory structure (lazy-loaded)
     scripts_dir: Optional[Path] = None
@@ -106,9 +106,9 @@ class Skill:
             metadata=self.metadata,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "name": self.name,
             "description": self.description,
             "location": str(self.location),

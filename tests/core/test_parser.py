@@ -148,7 +148,10 @@ class TestParseFull:
         skill = parse_full(skill_path)
 
         assert skill.name == "minimal-skill"
-        assert skill.instructions == "# Minimal Skill\n\nThis skill has only the required frontmatter fields."
+        assert (
+            skill.instructions
+            == "# Minimal Skill\n\nThis skill has only the required frontmatter fields."
+        )
         assert skill.scripts_dir is None
         assert skill.references_dir is None
         assert skill.assets_dir is None
@@ -159,9 +162,7 @@ class TestParseFull:
         skill_dir.mkdir()
 
         # Create SKILL.md
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: test\ndescription: Test\n---\n\nBody"
-        )
+        (skill_dir / "SKILL.md").write_text("---\nname: test\ndescription: Test\n---\n\nBody")
 
         # Create directories
         (skill_dir / "scripts").mkdir()

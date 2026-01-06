@@ -1,6 +1,5 @@
 """Markdown body parser for SKILL.md files."""
 
-from typing import Tuple
 
 
 def extract_body(content: str) -> str:
@@ -27,7 +26,7 @@ def extract_body(content: str) -> str:
     return ""
 
 
-def parse_markdown(content: str) -> Tuple[str, str]:
+def parse_markdown(content: str) -> tuple[str, str]:
     """Parse SKILL.md separating frontmatter and body.
 
     Args:

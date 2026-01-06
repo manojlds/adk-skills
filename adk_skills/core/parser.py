@@ -5,7 +5,6 @@ from typing import Optional
 
 from adk_skills.core.models import Skill, SkillMetadata
 from adk_skills.exceptions import SkillParseError
-from adk_skills.utils.markdown import extract_body
 from adk_skills.utils.yaml_parser import parse_frontmatter
 
 
@@ -49,7 +48,7 @@ def parse_metadata(skill_path: Path) -> SkillMetadata:
     try:
         content = skill_path.read_text(encoding="utf-8")
     except Exception as e:
-        raise SkillParseError(f"Error reading {skill_path}: {e}")
+        raise SkillParseError(f"Error reading {skill_path}: {e}") from e
 
     metadata, _ = parse_frontmatter(content)
 
@@ -65,9 +64,7 @@ def parse_metadata(skill_path: Path) -> SkillMetadata:
     if not isinstance(name, str) or not name.strip():
         raise SkillParseError(f"Field 'name' must be a non-empty string in {skill_path}")
     if not isinstance(description, str) or not description.strip():
-        raise SkillParseError(
-            f"Field 'description' must be a non-empty string in {skill_path}"
-        )
+        raise SkillParseError(f"Field 'description' must be a non-empty string in {skill_path}")
 
     return SkillMetadata(
         name=name.strip(),
@@ -105,7 +102,7 @@ def parse_full(skill_path: Path) -> Skill:
     try:
         content = skill_path.read_text(encoding="utf-8")
     except Exception as e:
-        raise SkillParseError(f"Error reading {skill_path}: {e}")
+        raise SkillParseError(f"Error reading {skill_path}: {e}") from e
 
     metadata, body = parse_frontmatter(content)
 
@@ -121,15 +118,11 @@ def parse_full(skill_path: Path) -> Skill:
     if not isinstance(name, str) or not name.strip():
         raise SkillParseError(f"Field 'name' must be a non-empty string in {skill_path}")
     if not isinstance(description, str) or not description.strip():
-        raise SkillParseError(
-            f"Field 'description' must be a non-empty string in {skill_path}"
-        )
+        raise SkillParseError(f"Field 'description' must be a non-empty string in {skill_path}")
 
     # Discover directory structure (lazy)
     scripts_dir = skill_dir / "scripts" if (skill_dir / "scripts").is_dir() else None
-    references_dir = (
-        skill_dir / "references" if (skill_dir / "references").is_dir() else None
-    )
+    references_dir = skill_dir / "references" if (skill_dir / "references").is_dir() else None
     assets_dir = skill_dir / "assets" if (skill_dir / "assets").is_dir() else None
 
     return Skill(
