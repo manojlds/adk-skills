@@ -1,7 +1,8 @@
 """SkillsRegistry - main interface for managing skills in ADK."""
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence, Union
+from typing import Optional, Union
 
 from adk_skills.core.discovery import discover_skills
 from adk_skills.core.models import Skill, SkillMetadata, SkillsConfig

@@ -1,7 +1,6 @@
 """Markdown body parser for SKILL.md files."""
 
 
-
 def extract_body(content: str) -> str:
     """Extract the markdown body from SKILL.md content.
 
