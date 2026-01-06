@@ -2,8 +2,6 @@
 
 from pathlib import Path
 
-import pytest
-
 from adk_skills.core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
 
 
