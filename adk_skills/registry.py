@@ -2,7 +2,7 @@
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from adk_skills.core.discovery import discover_skills
 from adk_skills.core.models import Skill, SkillMetadata, SkillsConfig
@@ -167,3 +167,70 @@ class SkillsRegistry:
     def __repr__(self) -> str:
         """String representation."""
         return f"SkillsRegistry(skills={len(self._metadata_registry)})"
+
+    def create_use_skill_tool(self) -> Any:
+        """Create ADK tool for skill activation.
+
+        The tool description includes an <available_skills> block listing
+        all discovered skills. When called, it loads and returns the full
+        skill instructions.
+
+        Returns:
+            Callable tool function for use with ADK agents
+
+        Example:
+            >>> registry = SkillsRegistry()
+            >>> registry.discover(["./skills"])
+            >>> agent = Agent(
+            ...     name="assistant",
+            ...     model="gemini-2.5-flash",
+            ...     tools=[registry.create_use_skill_tool()]
+            ... )
+        """
+        from adk_skills.tools.use_skill import create_use_skill_tool
+
+        return create_use_skill_tool(self)
+
+    def create_run_script_tool(self) -> Any:
+        """Create ADK tool for executing skill scripts.
+
+        Returns:
+            Callable tool function for script execution
+
+        Example:
+            >>> registry = SkillsRegistry()
+            >>> registry.discover(["./skills"])
+            >>> agent = Agent(
+            ...     name="assistant",
+            ...     model="gemini-2.5-flash",
+            ...     tools=[
+            ...         registry.create_use_skill_tool(),
+            ...         registry.create_run_script_tool(),
+            ...     ]
+            ... )
+        """
+        from adk_skills.tools.run_script import create_run_script_tool
+
+        return create_run_script_tool(self)
+
+    def create_read_reference_tool(self) -> Any:
+        """Create ADK tool for reading skill reference files.
+
+        Returns:
+            Callable tool function for reading references
+
+        Example:
+            >>> registry = SkillsRegistry()
+            >>> registry.discover(["./skills"])
+            >>> agent = Agent(
+            ...     name="assistant",
+            ...     model="gemini-2.5-flash",
+            ...     tools=[
+            ...         registry.create_use_skill_tool(),
+            ...         registry.create_read_reference_tool(),
+            ...     ]
+            ... )
+        """
+        from adk_skills.tools.read_reference import create_read_reference_tool
+
+        return create_read_reference_tool(self)

@@ -6,17 +6,34 @@ using the standard Agent Skills format (agentskills.io).
 
 __version__ = "0.1.0"
 
-# Core imports will be added as we implement them
-# from .registry import SkillsRegistry
-# from .core.models import Skill, SkillMetadata
-# from .helpers import with_skills, validate_skill, create_skill_template
+# Core imports
+from .core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
+from .core.validator import validate_skill
+from .exceptions import (
+    SkillConfigError,
+    SkillError,
+    SkillExecutionError,
+    SkillNotFoundError,
+    SkillParseError,
+    SkillValidationError,
+)
+from .registry import SkillsRegistry
 
 __all__ = [
     "__version__",
-    # "SkillsRegistry",
-    # "Skill",
-    # "SkillMetadata",
-    # "with_skills",
-    # "validate_skill",
-    # "create_skill_template",
+    # Core classes
+    "SkillsRegistry",
+    "Skill",
+    "SkillMetadata",
+    "SkillsConfig",
+    "ValidationResult",
+    # Functions
+    "validate_skill",
+    # Exceptions
+    "SkillError",
+    "SkillNotFoundError",
+    "SkillValidationError",
+    "SkillParseError",
+    "SkillExecutionError",
+    "SkillConfigError",
 ]
