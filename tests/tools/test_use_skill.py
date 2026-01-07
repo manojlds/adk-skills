@@ -182,3 +182,44 @@ class TestCreateUseSkillTool:
 
         result = tool("test-skill")
         assert result["skill_name"] == "test-skill"
+
+    def test_tool_without_skills_listing(self, tmp_path):
+        """Test creating tool without skills listing (for prompt injection)."""
+        skill_dir = tmp_path / "test-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: test-skill\ndescription: A test skill\n---\n\n# Test"
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+
+        # Create tool without skills listing
+        tool = create_use_skill_tool(registry, include_skills_listing=False)
+
+        # Docstring should NOT contain <available_skills>
+        assert "<available_skills>" not in tool.__doc__
+        assert "test-skill" not in tool.__doc__
+
+        # Tool should still work for activation
+        result = tool("test-skill")
+        assert result["skill_name"] == "test-skill"
+
+    def test_tool_with_skills_listing_via_registry(self, tmp_path):
+        """Test registry method supports include_skills_listing parameter."""
+        skill_dir = tmp_path / "test-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: test-skill\ndescription: A test skill\n---\n\n# Test"
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+
+        # With listing (default)
+        tool_with = registry.create_use_skill_tool(include_skills_listing=True)
+        assert "<available_skills>" in tool_with.__doc__
+
+        # Without listing
+        tool_without = registry.create_use_skill_tool(include_skills_listing=False)
+        assert "<available_skills>" not in tool_without.__doc__

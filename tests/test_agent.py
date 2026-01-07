@@ -225,6 +225,40 @@ Instructions.
         tools = agent.get_tools()
         assert len(tools) == 1  # only use_skill
 
+    def test_get_tools_without_listing_when_auto_inject(self, tmp_path):
+        """Test that use_skill tool doesn't include listing when auto_inject_prompt=True."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        # Without auto_inject_prompt (default) - should have listing
+        agent_without = SkillsAgent(
+            name="test-agent",
+            model="gemini-2.5-flash",
+            skills_directories=[tmp_path],
+            auto_inject_prompt=False,
+        )
+        tools_without = agent_without.get_tools()
+        assert "<available_skills>" in tools_without[0].__doc__
+
+        # With auto_inject_prompt - should NOT have listing
+        agent_with = SkillsAgent(
+            name="test-agent",
+            model="gemini-2.5-flash",
+            skills_directories=[tmp_path],
+            auto_inject_prompt=True,
+        )
+        tools_with = agent_with.get_tools()
+        assert "<available_skills>" not in tools_with[0].__doc__
+
 
 class TestSkillsAgentGetInstruction:
     """Tests for get_instruction method."""

@@ -209,17 +209,11 @@ def demo_integration_patterns() -> None:
     print("  ).build()")
     print()
 
-    print("Pattern 3: Mixed Approach")
+    print("Important: Choose ONE pattern, not both!")
     print("-" * 60)
-    print("Use both tools and prompt injection for flexibility:")
-    print()
-    print("  agent = SkillsAgent(")
-    print("      name='assistant',")
-    print("      model='gemini-2.5-flash',")
-    print("      skills_directories=['./skills'],")
-    print("      auto_inject_prompt=True,  # List in prompt")
-    print("      # Tools still available for on-demand loading")
-    print("  ).build()")
+    print("Listing skills in both prompt AND tool description wastes tokens.")
+    print("SkillsAgent automatically uses include_skills_listing=False when")
+    print("auto_inject_prompt=True to avoid duplication.")
     print()
 
 

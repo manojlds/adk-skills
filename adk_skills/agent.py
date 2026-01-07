@@ -128,6 +128,9 @@ class SkillsAgent:
     def get_tools(self) -> list[Any]:
         """Get all configured tools for this agent.
 
+        When auto_inject_prompt is True, the use_skill tool will not include
+        the <available_skills> listing in its description to avoid duplication.
+
         Returns:
             List of tool functions (use_skill, run_script, read_reference)
 
@@ -136,7 +139,10 @@ class SkillsAgent:
             >>> tools = agent.get_tools()
             >>> print(f"Created {len(tools)} tools")
         """
-        tools = [self.registry.create_use_skill_tool()]
+        # Don't include skills listing in tool if we're injecting it into prompt
+        include_listing = not self.auto_inject_prompt
+
+        tools = [self.registry.create_use_skill_tool(include_skills_listing=include_listing)]
 
         if self.include_script_tool:
             tools.append(self.registry.create_run_script_tool())

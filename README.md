@@ -293,43 +293,51 @@ full_instruction = inject_skills_prompt(
 
 ### Integration Patterns
 
-**Pattern 1: Tool-based (Default)**
+Choose between **two alternative patterns** (not both simultaneously):
+
+**Pattern 1: Tool-Based (Default - OpenCode Pattern)** ✅
 ```python
-# Skills listed in tool descriptions, activated on-demand
+# Skills listed in tool description, activated on-demand
 registry = SkillsRegistry()
 registry.discover(["./skills"])
 agent = Agent(
     name="assistant",
     model="gemini-2.5-flash",
+    instruction="You are helpful.",  # NO skills in prompt
     tools=[
-        registry.create_use_skill_tool(),
+        registry.create_use_skill_tool(),  # <available_skills> in tool description
         registry.create_run_script_tool(),
     ]
 )
 ```
 
-**Pattern 2: System Prompt Injection**
+**Pattern 2: Prompt Injection** 🆕
 ```python
-# Skills injected directly into system prompt
+# Skills in system prompt, NOT in tool description (avoids duplication)
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+prompt = registry.to_prompt_xml()
+
+agent = Agent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    instruction=f"You are helpful.\n\n{prompt}",  # Skills in prompt
+    tools=[
+        registry.create_use_skill_tool(include_skills_listing=False),  # No XML
+        registry.create_run_script_tool(),
+    ]
+)
+
+# Or use SkillsAgent (handles this automatically):
 agent = SkillsAgent(
     name="assistant",
     model="gemini-2.5-flash",
     skills_directories=["./skills"],
-    auto_inject_prompt=True,
+    auto_inject_prompt=True,  # Automatically omits skills from tool description
 ).build()
 ```
 
-**Pattern 3: Mixed Approach**
-```python
-# Use both tools and prompt injection
-agent = SkillsAgent(
-    name="assistant",
-    model="gemini-2.5-flash",
-    skills_directories=["./skills"],
-    auto_inject_prompt=True,  # List in prompt
-    # Tools still available for on-demand loading
-).build()
-```
+**Why Not Both?** Listing skills in both prompt and tool description wastes tokens with no benefit. Choose one pattern based on your needs.
 
 ## 🏗️ Project Status
 

@@ -168,12 +168,17 @@ class SkillsRegistry:
         """String representation."""
         return f"SkillsRegistry(skills={len(self._metadata_registry)})"
 
-    def create_use_skill_tool(self) -> Any:
+    def create_use_skill_tool(self, include_skills_listing: bool = True) -> Any:
         """Create ADK tool for skill activation.
 
         The tool description includes an <available_skills> block listing
-        all discovered skills. When called, it loads and returns the full
-        skill instructions.
+        all discovered skills (when include_skills_listing=True). When called,
+        it loads and returns the full skill instructions.
+
+        Args:
+            include_skills_listing: Whether to include <available_skills> XML in
+                tool description (default: True). Set to False when using prompt
+                injection to avoid duplication.
 
         Returns:
             Callable tool function for use with ADK agents
@@ -181,15 +186,24 @@ class SkillsRegistry:
         Example:
             >>> registry = SkillsRegistry()
             >>> registry.discover(["./skills"])
+            >>>
+            >>> # Pattern 1: Tool-based (default)
             >>> agent = Agent(
             ...     name="assistant",
             ...     model="gemini-2.5-flash",
             ...     tools=[registry.create_use_skill_tool()]
             ... )
+            >>>
+            >>> # Pattern 2: Prompt-based
+            >>> prompt = registry.to_prompt_xml()
+            >>> agent = Agent(
+            ...     instruction=f"You are helpful.\\n{prompt}",
+            ...     tools=[registry.create_use_skill_tool(include_skills_listing=False)]
+            ... )
         """
         from adk_skills.tools.use_skill import create_use_skill_tool
 
-        return create_use_skill_tool(self)
+        return create_use_skill_tool(self, include_skills_listing=include_skills_listing)
 
     def create_run_script_tool(self) -> Any:
         """Create ADK tool for executing skill scripts.
