@@ -22,10 +22,11 @@ def discover_skills(directories: list[Path]) -> list[SkillMetadata]:
         - Scans recursively for SKILL.md files
         - Parses only frontmatter (not full content)
         - Skips invalid skills with warnings
-        - Uses glob pattern: {skill,skills}/**/SKILL.md
+        - Prefers SKILL.md over skill.md if both exist in same directory
     """
     discovered: list[SkillMetadata] = []
     seen_names: set = set()
+    seen_dirs: set = set()
 
     for directory in directories:
         if not directory.exists():
@@ -34,26 +35,48 @@ def discover_skills(directories: list[Path]) -> list[SkillMetadata]:
         if not directory.is_dir():
             continue
 
-        # Search for SKILL.md files recursively
-        # Look in both skill/ and skills/ subdirectories
-        for pattern in ["**/SKILL.md", "**/skill.md"]:
-            for skill_path in directory.glob(pattern):
-                try:
-                    # Parse metadata only (fast)
-                    metadata = parse_metadata(skill_path)
+        # First pass: Find all SKILL.md files (uppercase preferred)
+        for skill_path in directory.glob("**/SKILL.md"):
+            skill_dir = skill_path.parent
+            seen_dirs.add(skill_dir)
 
-                    # Warn about duplicate names
-                    if metadata.name in seen_names:
-                        # Skip duplicate but could log warning
-                        continue
+            try:
+                # Parse metadata only (fast)
+                metadata = parse_metadata(skill_path)
 
-                    discovered.append(metadata)
-                    seen_names.add(metadata.name)
-
-                except SkillParseError:
-                    # Skip invalid skills
-                    # Could log warning here
+                # Skip duplicate names
+                if metadata.name in seen_names:
                     continue
+
+                discovered.append(metadata)
+                seen_names.add(metadata.name)
+
+            except SkillParseError:
+                # Skip invalid skills
+                continue
+
+        # Second pass: Find skill.md files (lowercase) only if no SKILL.md in same dir
+        for skill_path in directory.glob("**/skill.md"):
+            skill_dir = skill_path.parent
+
+            # Skip if we already found SKILL.md in this directory
+            if skill_dir in seen_dirs:
+                continue
+
+            try:
+                # Parse metadata only (fast)
+                metadata = parse_metadata(skill_path)
+
+                # Skip duplicate names
+                if metadata.name in seen_names:
+                    continue
+
+                discovered.append(metadata)
+                seen_names.add(metadata.name)
+
+            except SkillParseError:
+                # Skip invalid skills
+                continue
 
     return discovered
 
