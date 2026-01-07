@@ -2,7 +2,7 @@
 
 > Bring [Agent Skills](https://agentskills.io) to Google's Agent Development Kit (ADK)
 
-[![PyPI version](https://badge.fury.io/py/adk-skills.svg)](https://badge.fury.io/py/adk-skills)
+[![PyPI version](https://badge.fury.io/py/adk-skills-agent.svg)](https://badge.fury.io/py/adk-skills-agent)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -15,7 +15,7 @@
 **From PyPI**:
 
 ```bash
-pip install adk-skills
+pip install adk-skills-agent
 ```
 
 **Development Version**:

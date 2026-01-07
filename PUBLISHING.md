@@ -1,6 +1,6 @@
 # Publishing to PyPI
 
-This document explains how to publish `adk-skills` to PyPI.
+This document explains how to publish `adk-skills-agent` to PyPI.
 
 ## Prerequisites
 
@@ -19,7 +19,7 @@ PyPI now supports "Trusted Publishing" which uses OpenID Connect (OIDC) to authe
    - Or navigate to: https://pypi.org/manage/account/publishing/
 
 3. **Add a new pending publisher**:
-   - **PyPI project name**: `adk-skills`
+   - **PyPI project name**: `adk-skills-agent`
    - **Owner**: `manojlds` (your GitHub username/org)
    - **Repository name**: `adk-skills`
    - **Workflow name**: `publish.yml`
@@ -76,7 +76,7 @@ For testing or manual releases:
 1. **Run the workflow manually** with `testpypi` environment
 2. **Install from Test PyPI** to verify:
    ```bash
-   pip install --index-url https://test.pypi.org/simple/ adk-skills
+   pip install --index-url https://test.pypi.org/simple/ adk-skills-agent
    ```
 
 3. **Test the installation** to ensure everything works
@@ -90,10 +90,10 @@ python -m build
 
 # Check the built files
 ls dist/
-# Should see: adk_skills-0.1.0.tar.gz and adk_skills-0.1.0-py3-none-any.whl
+# Should see: adk_skills_agent-0.1.0.tar.gz and adk_skills_agent-0.1.0-py3-none-any.whl
 
 # Install locally to test
-pip install dist/adk_skills-0.1.0-py3-none-any.whl
+pip install dist/adk_skills_agent-0.1.0-py3-none-any.whl
 ```
 
 ## Version Management
@@ -146,7 +146,7 @@ The `publish.yml` workflow:
 
 ### "Project not found" error:
 - Ensure you've set up the pending publisher on PyPI
-- Check the project name matches exactly: `adk-skills`
+- Check the project name matches exactly: `adk-skills-agent`
 
 ### "Permission denied" error:
 - Verify GitHub environments are created
@@ -165,7 +165,7 @@ The `publish.yml` workflow:
 
 ## Checklist for First Release
 
-- [ ] Set up PyPI trusted publishing for `adk-skills`
+- [ ] Set up PyPI trusted publishing for `adk-skills-agent`
 - [ ] Set up Test PyPI trusted publishing for testing
 - [ ] Create GitHub environments: `pypi` and `testpypi`
 - [ ] Update version to `0.1.0` (or desired version)
@@ -174,5 +174,5 @@ The `publish.yml` workflow:
 - [ ] Test install from Test PyPI
 - [ ] Create GitHub release with tag `v0.1.0`
 - [ ] Verify automatic publish to PyPI
-- [ ] Test install from PyPI: `pip install adk-skills`
+- [ ] Test install from PyPI: `pip install adk-skills-agent`
 - [ ] Update README if needed
