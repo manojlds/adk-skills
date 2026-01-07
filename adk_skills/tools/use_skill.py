@@ -107,9 +107,7 @@ def create_use_skill_tool(
         available_skills_xml = ""
 
     if use_skill.__doc__:
-        use_skill.__doc__ = use_skill.__doc__.format(
-            available_skills_xml=available_skills_xml
-        )
+        use_skill.__doc__ = use_skill.__doc__.format(available_skills_xml=available_skills_xml)
 
     # Set function name for better debugging
     use_skill.__name__ = "use_skill"
