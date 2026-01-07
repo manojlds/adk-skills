@@ -551,3 +551,240 @@ Instructions.
         # After clear, should need to rediscover
         with pytest.raises(SkillNotFoundError):
             registry.load_skill("my-skill")
+
+
+class TestSkillsRegistryPromptInjection:
+    """Tests for prompt injection utilities."""
+
+    def test_to_prompt_xml_empty_registry(self):
+        """Test XML prompt generation with empty registry."""
+        registry = SkillsRegistry()
+        xml = registry.to_prompt_xml()
+        assert "<available_skills>" in xml
+        assert "No skills available" in xml
+
+    def test_to_prompt_xml_with_skills(self, tmp_path):
+        """Test XML prompt generation with skills."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        xml = registry.to_prompt_xml()
+
+        assert "<available_skills>" in xml
+        assert "<skill>" in xml
+        assert "<name>my-skill</name>" in xml
+        assert "<description>A test skill</description>" in xml
+        assert "</available_skills>" in xml
+
+    def test_to_prompt_xml_escapes_special_chars(self, tmp_path):
+        """Test that XML prompt escapes special characters."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A skill with <special> & chars
+---
+
+Instructions.
+"""
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        xml = registry.to_prompt_xml()
+
+        assert "&lt;special&gt;" in xml
+        assert "&amp;" in xml
+
+    def test_to_prompt_text_empty_registry(self):
+        """Test text prompt generation with empty registry."""
+        registry = SkillsRegistry()
+        text = registry.to_prompt_text()
+        assert text == "No skills available."
+
+    def test_to_prompt_text_with_skills(self, tmp_path):
+        """Test text prompt generation with skills."""
+        for i in range(2):
+            skill_dir = tmp_path / f"skill-{i}"
+            skill_dir.mkdir()
+            (skill_dir / "SKILL.md").write_text(
+                f"""---
+name: skill-{i}
+description: Test skill {i}
+---
+
+Instructions.
+"""
+            )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        text = registry.to_prompt_text()
+
+        assert "Available Skills:" in text
+        assert "- skill-0: Test skill 0" in text
+        assert "- skill-1: Test skill 1" in text
+
+    def test_get_skills_prompt_xml_format(self, tmp_path):
+        """Test get_skills_prompt with XML format."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        prompt = registry.get_skills_prompt(format="xml")
+
+        assert "<available_skills>" in prompt
+        assert "<name>my-skill</name>" in prompt
+
+    def test_get_skills_prompt_text_format(self, tmp_path):
+        """Test get_skills_prompt with text format."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        prompt = registry.get_skills_prompt(format="text")
+
+        assert "Available Skills:" in prompt
+        assert "- my-skill: A test skill" in prompt
+
+    def test_get_skills_prompt_invalid_format(self):
+        """Test get_skills_prompt with invalid format."""
+        registry = SkillsRegistry()
+
+        with pytest.raises(ValueError, match="Unsupported format"):
+            registry.get_skills_prompt(format="invalid")
+
+
+class TestSkillsRegistryValidation:
+    """Tests for validation utilities."""
+
+    def test_validate_all_empty_registry(self):
+        """Test validate_all with empty registry."""
+        registry = SkillsRegistry()
+        results = registry.validate_all()
+        assert results == {}
+
+    def test_validate_all_with_valid_skills(self, tmp_path):
+        """Test validate_all with valid skills."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+license: MIT
+---
+
+Instructions.
+"""
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        results = registry.validate_all(strict=True)
+
+        assert "my-skill" in results
+        assert results["my-skill"].valid is True
+
+    def test_validate_all_with_invalid_skills(self, tmp_path):
+        """Test validate_all with invalid skills."""
+        skill_dir = tmp_path / "invalid-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: Invalid_Name
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        config = SkillsConfig(strict_validation=False)
+        registry = SkillsRegistry(config=config)
+        registry.discover([tmp_path])
+        results = registry.validate_all(strict=True)
+
+        assert "Invalid_Name" in results
+        assert results["Invalid_Name"].valid is False
+        assert len(results["Invalid_Name"].errors) > 0
+
+    def test_validate_skill_by_name_existing(self, tmp_path):
+        """Test validate_skill_by_name for existing skill."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        result = registry.validate_skill_by_name("my-skill")
+
+        assert result.valid is True
+
+    def test_validate_skill_by_name_nonexistent(self):
+        """Test validate_skill_by_name for nonexistent skill."""
+        registry = SkillsRegistry()
+
+        with pytest.raises(SkillNotFoundError):
+            registry.validate_skill_by_name("nonexistent-skill")
+
+    def test_validate_skill_by_name_with_warnings(self, tmp_path):
+        """Test validate_skill_by_name shows warnings in strict mode."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        result = registry.validate_skill_by_name("my-skill", strict=True)
+
+        assert result.valid is True
+        assert len(result.warnings) > 0  # Should warn about missing license

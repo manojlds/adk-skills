@@ -57,6 +57,10 @@ agent = Agent(
 - 🔧 **Script Execution**: Execute Python and Bash scripts from skills
 - 🚀 **Simple Integration**: Tool-based pattern following OpenCode's approach
 - 🔒 **Secure**: Sandboxed script execution with timeouts and resource limits
+- 🤖 **Custom Agent Class**: `SkillsAgent` for easy agent creation with built-in skills support
+- 💉 **Prompt Injection**: Inject skills directly into system prompts (XML or text format)
+- ✅ **Validation**: Validate skills against the agentskills.io specification
+- 🛠️ **Helper Functions**: Convenient utilities like `with_skills()`, `create_skills_agent()`
 - 📚 **Well Documented**: Based on reference implementations
 
 ## 📖 What are Agent Skills?
@@ -161,6 +165,172 @@ research_agent = Agent(
 )
 ```
 
+## 🔥 Advanced Usage
+
+### Prompt Injection Utilities
+
+Inject skills directly into system prompts instead of using tools:
+
+```python
+from adk_skills import SkillsRegistry
+
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+
+# Get skills as XML for prompt injection
+xml_prompt = registry.to_prompt_xml()
+# Returns: <available_skills>...</available_skills>
+
+# Get skills as plain text
+text_prompt = registry.to_prompt_text()
+# Returns: Available Skills: - skill-name: description
+
+# Use with agent
+agent = Agent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    instruction=f"You are helpful.\n\n{xml_prompt}",
+)
+```
+
+### Skills Validation
+
+Validate skills against the agentskills.io specification:
+
+```python
+from adk_skills import SkillsRegistry
+
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+
+# Validate all skills
+results = registry.validate_all(strict=True)
+for name, result in results.items():
+    if not result.valid:
+        print(f"{name}: {result.errors}")
+    if result.warnings:
+        print(f"{name}: {result.warnings}")
+
+# Validate specific skill
+result = registry.validate_skill_by_name("my-skill")
+if result.valid:
+    print("Skill is valid!")
+```
+
+### SkillsAgent - Custom Agent Class
+
+Use the `SkillsAgent` class for easy agent creation with built-in skills support:
+
+```python
+from adk_skills import SkillsAgent
+
+# Create agent with skills integrated
+agent = SkillsAgent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    instruction="You are a helpful assistant.",
+    skills_directories=["./skills"],
+    auto_inject_prompt=True,  # Inject skills into prompt
+    prompt_format="xml",       # or "text"
+    validate_skills=True,      # Validate on discovery
+    include_script_tool=True,
+    include_reference_tool=True,
+)
+
+# Get the configured ADK agent
+adk_agent = agent.build()
+```
+
+### Helper Functions
+
+#### with_skills()
+
+Add skills to an existing agent:
+
+```python
+from google.adk.agents import Agent
+from adk_skills import with_skills
+
+# Create standard agent
+agent = Agent(
+    name="assistant",
+    model="gemini-2.5-flash",
+)
+
+# Add skills support
+agent = with_skills(agent, ["./skills"])
+```
+
+#### create_skills_agent()
+
+Create an agent with skills in one call:
+
+```python
+from adk_skills import create_skills_agent
+
+agent = create_skills_agent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    instruction="You are helpful.",
+    skills_directories=["./skills"],
+)
+```
+
+#### inject_skills_prompt()
+
+Inject skills into an instruction string:
+
+```python
+from adk_skills import inject_skills_prompt
+
+instruction = "You are a helpful assistant."
+full_instruction = inject_skills_prompt(
+    instruction,
+    ["./skills"],
+    format="xml"  # or "text"
+)
+```
+
+### Integration Patterns
+
+**Pattern 1: Tool-based (Default)**
+```python
+# Skills listed in tool descriptions, activated on-demand
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+agent = Agent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    tools=[
+        registry.create_use_skill_tool(),
+        registry.create_run_script_tool(),
+    ]
+)
+```
+
+**Pattern 2: System Prompt Injection**
+```python
+# Skills injected directly into system prompt
+agent = SkillsAgent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    skills_directories=["./skills"],
+    auto_inject_prompt=True,
+).build()
+```
+
+**Pattern 3: Mixed Approach**
+```python
+# Use both tools and prompt injection
+agent = SkillsAgent(
+    name="assistant",
+    model="gemini-2.5-flash",
+    skills_directories=["./skills"],
+    auto_inject_prompt=True,  # List in prompt
+    # Tools still available for on-demand loading
+).build()
+```
+
 ## 🏗️ Project Status
 
 **Current Phase**: MVP Complete ✅ → Phase 2 in Progress
@@ -185,8 +355,9 @@ See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed roadmap.
 
 ## 🎯 Try It Now
 
-Run the basic example to see it in action:
+Run the examples to see it in action:
 
+**Basic Example:**
 ```bash
 python examples/basic_example.py
 ```
@@ -196,6 +367,18 @@ This demonstrates:
 - Creating ADK tools
 - Activating a skill on-demand
 - Reading reference files
+
+**Advanced Example:**
+```bash
+python examples/advanced_example.py
+```
+
+This demonstrates:
+- Prompt injection utilities (XML and text formats)
+- Skills validation features
+- SkillsAgent custom agent class
+- Helper functions (with_skills, create_skills_agent, inject_skills_prompt)
+- Common integration patterns
 
 See [examples/README.md](examples/README.md) for more details.
 

@@ -26,7 +26,9 @@ def generate_available_skills_xml(registry: "SkillsRegistry") -> str:
         xml_parts.append("  <skill>")
         xml_parts.append(f"    <name>{metadata.name}</name>")
         # Escape description for XML
-        description = metadata.description.replace("&", "&amp;").replace("<", "&lt;")
+        description = (
+            metadata.description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
         xml_parts.append(f"    <description>{description}</description>")
         xml_parts.append("  </skill>")
 

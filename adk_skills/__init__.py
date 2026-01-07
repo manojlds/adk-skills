@@ -7,6 +7,8 @@ using the standard Agent Skills format (agentskills.io).
 __version__ = "0.1.0"
 
 # Core imports
+# Agent and helpers
+from .agent import SkillsAgent
 from .core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
 from .core.validator import validate_skill
 from .exceptions import (
@@ -17,6 +19,7 @@ from .exceptions import (
     SkillParseError,
     SkillValidationError,
 )
+from .helpers import create_skills_agent, inject_skills_prompt, with_skills
 from .registry import SkillsRegistry
 
 __all__ = [
@@ -27,7 +30,12 @@ __all__ = [
     "SkillMetadata",
     "SkillsConfig",
     "ValidationResult",
-    # Functions
+    # Agent integration
+    "SkillsAgent",
+    # Helper functions
+    "with_skills",
+    "create_skills_agent",
+    "inject_skills_prompt",
     "validate_skill",
     # Exceptions
     "SkillError",

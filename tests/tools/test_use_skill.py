@@ -80,8 +80,8 @@ class TestGenerateAvailableSkillsXml:
 
         xml = generate_available_skills_xml(registry)
 
-        # Check that < and & are escaped (> doesn't need escaping in XML)
-        assert "&lt;tag>" in xml
+        # Check that <, >, and & are escaped
+        assert "&lt;tag&gt;" in xml
         assert "&amp;" in xml
         assert "<tag>" not in xml
 
