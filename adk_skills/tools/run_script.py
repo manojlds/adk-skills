@@ -1,8 +1,7 @@
 """Run script tool - execute scripts from activated skills."""
 
 import subprocess
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from adk_skills.exceptions import SkillExecutionError, SkillNotFoundError
 
@@ -10,7 +9,9 @@ if TYPE_CHECKING:
     from adk_skills.registry import SkillsRegistry
 
 
-def create_run_script_tool(registry: "SkillsRegistry") -> Callable[[str, str, dict], dict[str, Any]]:
+def create_run_script_tool(
+    registry: "SkillsRegistry",
+) -> Callable[[str, str, dict], dict[str, Any]]:
     """Create ADK tool for executing skill scripts.
 
     Args:
@@ -26,7 +27,9 @@ def create_run_script_tool(registry: "SkillsRegistry") -> Callable[[str, str, di
         >>> result = run_script("calculator", "calculate.py", {"operation": "add", "a": 5, "b": 3})
     """
 
-    def run_script(skill: str, script: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+    def run_script(
+        skill: str, script: str, args: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
         """Execute a script from an activated skill.
 
         Args:
@@ -93,9 +96,7 @@ def create_run_script_tool(registry: "SkillsRegistry") -> Callable[[str, str, di
             }
 
         except subprocess.TimeoutExpired as e:
-            raise SkillExecutionError(
-                f"Script '{script}' timed out after {timeout} seconds"
-            ) from e
+            raise SkillExecutionError(f"Script '{script}' timed out after {timeout} seconds") from e
         except Exception as e:
             raise SkillExecutionError(f"Failed to execute script '{script}': {e}") from e
 

@@ -25,9 +25,7 @@ class TestGenerateAvailableSkillsXml:
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
         skill_md = skill_dir / "SKILL.md"
-        skill_md.write_text(
-            "---\nname: test-skill\ndescription: A test skill\n---\n\n# Test Skill"
-        )
+        skill_md.write_text("---\nname: test-skill\ndescription: A test skill\n---\n\n# Test Skill")
 
         registry = SkillsRegistry()
         registry.discover([tmp_path])

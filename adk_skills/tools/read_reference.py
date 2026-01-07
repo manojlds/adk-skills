@@ -1,6 +1,5 @@
 """Read reference tool - read reference files from activated skills."""
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from adk_skills.exceptions import SkillExecutionError, SkillNotFoundError
@@ -49,9 +48,7 @@ def create_read_reference_tool(
         try:
             skill_obj = registry.load_skill(skill)
         except SkillNotFoundError as e:
-            raise SkillNotFoundError(
-                f"Skill '{skill}' not found. Cannot read reference."
-            ) from e
+            raise SkillNotFoundError(f"Skill '{skill}' not found. Cannot read reference.") from e
 
         # Check if skill has references directory
         if skill_obj.references_dir is None:
@@ -64,9 +61,7 @@ def create_read_reference_tool(
         try:
             reference_path = reference_path.resolve()
             if not reference_path.is_relative_to(skill_obj.references_dir.resolve()):
-                raise SkillExecutionError(
-                    f"Access denied: reference path escapes skill directory"
-                )
+                raise SkillExecutionError("Access denied: reference path escapes skill directory")
         except (ValueError, OSError) as e:
             raise SkillExecutionError(f"Invalid reference path: {e}") from e
 

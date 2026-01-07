@@ -90,7 +90,8 @@ def create_use_skill_tool(registry: "SkillsRegistry") -> Callable[[str], dict[st
 
     # Generate XML and inject into docstring
     available_skills_xml = generate_available_skills_xml(registry)
-    use_skill.__doc__ = use_skill.__doc__.format(available_skills_xml=available_skills_xml)
+    if use_skill.__doc__:
+        use_skill.__doc__ = use_skill.__doc__.format(available_skills_xml=available_skills_xml)
 
     # Set function name for better debugging
     use_skill.__name__ = "use_skill"
