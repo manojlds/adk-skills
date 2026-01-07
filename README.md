@@ -12,6 +12,16 @@
 
 ### Installation
 
+**Development Version** (recommended for now):
+
+```bash
+git clone https://github.com/manojlds/adk-skills.git
+cd adk-skills
+pip install -e .
+```
+
+**PyPI** (coming soon):
+
 ```bash
 pip install adk-skills
 ```
@@ -153,25 +163,51 @@ research_agent = Agent(
 
 ## 🏗️ Project Status
 
-**Current Phase**: Design & Planning ✅
+**Current Phase**: MVP Complete ✅ → Phase 2 in Progress
 
 - [x] Architecture design complete
 - [x] Implementation plan finalized
-- [ ] Phase 1: Foundation (MVP) - In Progress
-- [ ] Phase 2: Script Execution
+- [x] **Phase 1: Foundation (MVP)** - ✅ Complete!
+  - [x] Core models and parsers
+  - [x] Skills discovery and registry
+  - [x] Validation system
+  - [x] `use_skill` tool for activation
+  - [x] `run_script` and `read_reference` tools
+  - [x] Working examples
+  - [x] 90%+ test coverage (129 tests passing)
+- [ ] Phase 2: Script Execution - In Progress
+  - [x] Basic script execution
+  - [ ] Advanced executors with sandboxing
 - [ ] Phase 3: Advanced Features
 - [ ] Phase 4: Public Release
 
 See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed roadmap.
+
+## 🎯 Try It Now
+
+Run the basic example to see it in action:
+
+```bash
+python examples/basic_example.py
+```
+
+This demonstrates:
+- Discovering 2 example skills
+- Creating ADK tools
+- Activating a skill on-demand
+- Reading reference files
+
+See [examples/README.md](examples/README.md) for more details.
 
 ## 📚 Documentation
 
 - **[Design Document](DESIGN.md)**: Architecture and technical decisions
 - **[Implementation Plan](IMPLEMENTATION_PLAN.md)**: Phased development roadmap
 - **[Project Structure](PROJECT_STRUCTURE.md)**: Codebase organization
-- **Quick Start Guide**: Coming soon
-- **API Reference**: Coming soon
-- **Skill Developer Guide**: Coming soon
+- **[Examples](examples/README.md)**: Working code examples
+- Quick Start Guide: Coming soon
+- API Reference: Coming soon
+- Skill Developer Guide: Coming soon
 
 ## 🤝 Contributing
 
@@ -180,11 +216,12 @@ We welcome contributions! This project is in active development. See our [IMPLEM
 ### Development Setup
 
 ```bash
-git clone https://github.com/yourusername/adk-skills.git
+git clone https://github.com/manojlds/adk-skills.git
 cd adk-skills
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # or `venv\Scripts\activate` on Windows
 pip install -e ".[dev]"
+pytest  # Run tests (129 tests, 90%+ coverage)
 ```
 
 ## 🔗 Related Projects
@@ -205,6 +242,6 @@ MIT License - see [LICENSE](LICENSE) file for details
 
 ---
 
-**Status**: Design Phase | **Target Release**: v1.0.0 | **Python**: 3.9+
+**Status**: MVP Complete | **Version**: 0.1.0 (dev) | **Python**: 3.9+
 
 For questions or support, please open an issue on GitHub.
