@@ -124,7 +124,7 @@ class Skill:
 ### Step 1: Skills Discovery & Registry
 
 ```python
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 # Initialize registry
 registry = SkillsRegistry()
@@ -345,7 +345,7 @@ def create_skill_template(output_dir: Path, name: str) -> None:
 
 ```python
 from google.adk.agents import Agent
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 # Discover skills
 registry = SkillsRegistry()

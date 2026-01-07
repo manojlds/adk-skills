@@ -40,7 +40,7 @@ A complete skill with scripts and references demonstrating:
 
 ```python
 from google.adk.agents import Agent
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 # Discover skills
 registry = SkillsRegistry()

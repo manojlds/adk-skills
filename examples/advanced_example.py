@@ -10,7 +10,7 @@ This example showcases:
 
 from pathlib import Path
 
-from adk_skills import (
+from adk_skills_agent import (
     SkillsAgent,
     SkillsRegistry,
     create_skills_agent,

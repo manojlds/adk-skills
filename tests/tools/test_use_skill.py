@@ -2,9 +2,9 @@
 
 import pytest
 
-from adk_skills import SkillsRegistry
-from adk_skills.exceptions import SkillNotFoundError
-from adk_skills.tools.use_skill import create_use_skill_tool, generate_available_skills_xml
+from adk_skills_agent import SkillsRegistry
+from adk_skills_agent.exceptions import SkillNotFoundError
+from adk_skills_agent.tools.use_skill import create_use_skill_tool, generate_available_skills_xml
 
 
 class TestGenerateAvailableSkillsXml:

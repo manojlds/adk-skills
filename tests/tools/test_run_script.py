@@ -2,9 +2,9 @@
 
 import pytest
 
-from adk_skills import SkillsRegistry
-from adk_skills.exceptions import SkillExecutionError, SkillNotFoundError
-from adk_skills.tools.run_script import create_run_script_tool
+from adk_skills_agent import SkillsRegistry
+from adk_skills_agent.exceptions import SkillExecutionError, SkillNotFoundError
+from adk_skills_agent.tools.run_script import create_run_script_tool
 
 
 class TestCreateRunScriptTool:

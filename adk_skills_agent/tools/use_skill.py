@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-    from adk_skills.registry import SkillsRegistry
+    from adk_skills_agent.registry import SkillsRegistry
 
 
 def generate_available_skills_xml(registry: "SkillsRegistry") -> str:

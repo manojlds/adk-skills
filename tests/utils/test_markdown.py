@@ -1,6 +1,6 @@
 """Tests for markdown parser."""
 
-from adk_skills.utils.markdown import extract_body, parse_markdown
+from adk_skills_agent.utils.markdown import extract_body, parse_markdown
 
 
 class TestExtractBody:

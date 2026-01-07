@@ -2,9 +2,9 @@
 
 from pathlib import Path
 
-from adk_skills.core.models import SkillMetadata
-from adk_skills.core.parser import parse_metadata
-from adk_skills.exceptions import SkillParseError
+from adk_skills_agent.core.models import SkillMetadata
+from adk_skills_agent.core.parser import parse_metadata
+from adk_skills_agent.exceptions import SkillParseError
 
 
 def discover_skills(directories: list[Path]) -> list[SkillMetadata]:

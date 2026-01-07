@@ -11,7 +11,7 @@ This example shows:
 
 from pathlib import Path
 
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 
 def main() -> None:
@@ -89,7 +89,7 @@ def main() -> None:
     print()
     print("   ```python")
     print("   from google.adk.agents import Agent")
-    print("   from adk_skills import SkillsRegistry")
+    print("   from adk_skills_agent import SkillsRegistry")
     print()
     print("   registry = SkillsRegistry()")
     print('   registry.discover(["./skills"])')

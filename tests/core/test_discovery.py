@@ -1,7 +1,7 @@
 """Tests for skill discovery module."""
 
-from adk_skills.core.discovery import discover_skills
-from adk_skills.core.models import SkillMetadata
+from adk_skills_agent.core.discovery import discover_skills
+from adk_skills_agent.core.models import SkillMetadata
 
 
 def test_discover_skills_empty_directory(tmp_path):

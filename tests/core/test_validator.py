@@ -2,8 +2,8 @@
 
 import pytest
 
-from adk_skills.core.models import Skill, SkillMetadata, ValidationResult
-from adk_skills.core.validator import (
+from adk_skills_agent.core.models import Skill, SkillMetadata, ValidationResult
+from adk_skills_agent.core.validator import (
     validate_skill,
     validate_skill_compatibility,
     validate_skill_description,

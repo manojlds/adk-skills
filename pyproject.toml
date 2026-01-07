@@ -41,7 +41,7 @@ dev = [
 ]
 
 [project.scripts]
-adk-skills = "adk_skills.cli:main"
+adk-skills = "adk_skills_agent.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/manojlds/adk-skills"
@@ -51,7 +51,7 @@ Issues = "https://github.com/manojlds/adk-skills/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["adk_skills*"]
+include = ["adk_skills_agent*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -65,7 +65,7 @@ addopts = [
 ]
 
 [tool.coverage.run]
-source = ["adk_skills"]
+source = ["adk_skills_agent"]
 omit = ["*/tests/*", "*/test_*"]
 
 [tool.coverage.report]

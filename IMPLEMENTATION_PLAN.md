@@ -222,7 +222,7 @@ def create_use_skill_tool(registry: SkillsRegistry) -> Callable:
 **Example**:
 ```python
 from google.adk.agents import Agent
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 registry = SkillsRegistry()
 registry.discover(["./examples/skills"])

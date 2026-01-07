@@ -4,11 +4,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from adk_skills.core.discovery import discover_skills
-from adk_skills.core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
-from adk_skills.core.parser import parse_full
-from adk_skills.core.validator import validate_skill_metadata
-from adk_skills.exceptions import SkillNotFoundError
+from adk_skills_agent.core.discovery import discover_skills
+from adk_skills_agent.core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
+from adk_skills_agent.core.parser import parse_full
+from adk_skills_agent.core.validator import validate_skill_metadata
+from adk_skills_agent.exceptions import SkillNotFoundError
 
 
 class SkillsRegistry:
@@ -201,7 +201,7 @@ class SkillsRegistry:
             ...     tools=[registry.create_use_skill_tool(include_skills_listing=False)]
             ... )
         """
-        from adk_skills.tools.use_skill import create_use_skill_tool
+        from adk_skills_agent.tools.use_skill import create_use_skill_tool
 
         return create_use_skill_tool(self, include_skills_listing=include_skills_listing)
 
@@ -223,7 +223,7 @@ class SkillsRegistry:
             ...     ]
             ... )
         """
-        from adk_skills.tools.run_script import create_run_script_tool
+        from adk_skills_agent.tools.run_script import create_run_script_tool
 
         return create_run_script_tool(self)
 
@@ -245,7 +245,7 @@ class SkillsRegistry:
             ...     ]
             ... )
         """
-        from adk_skills.tools.read_reference import create_read_reference_tool
+        from adk_skills_agent.tools.read_reference import create_read_reference_tool
 
         return create_read_reference_tool(self)
 
@@ -273,7 +273,7 @@ class SkillsRegistry:
               </skill>
             </available_skills>
         """
-        from adk_skills.tools.use_skill import generate_available_skills_xml
+        from adk_skills_agent.tools.use_skill import generate_available_skills_xml
 
         return generate_available_skills_xml(self)
 

@@ -8,9 +8,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from adk_skills.core.models import SkillsConfig
-from adk_skills.exceptions import SkillConfigError
-from adk_skills.registry import SkillsRegistry
+from adk_skills_agent.core.models import SkillsConfig
+from adk_skills_agent.exceptions import SkillConfigError
+from adk_skills_agent.registry import SkillsRegistry
 
 
 class SkillsAgent:
@@ -22,7 +22,7 @@ class SkillsAgent:
 
     Example:
         >>> from google.adk.agents import Agent
-        >>> from adk_skills import SkillsAgent
+        >>> from adk_skills_agent import SkillsAgent
         >>>
         >>> # Create agent with skills
         >>> skills_agent = SkillsAgent(
@@ -187,7 +187,7 @@ class SkillsAgent:
             ImportError: If google.adk is not installed
 
         Example:
-            >>> from adk_skills import SkillsAgent
+            >>> from adk_skills_agent import SkillsAgent
             >>> skills_agent = SkillsAgent(
             ...     name="assistant",
             ...     model="gemini-2.5-flash",

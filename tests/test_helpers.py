@@ -2,8 +2,8 @@
 
 import pytest
 
-from adk_skills.core.models import SkillsConfig
-from adk_skills.helpers import (
+from adk_skills_agent.core.models import SkillsConfig
+from adk_skills_agent.helpers import (
     create_skills_agent,
     inject_skills_prompt,
     with_skills,

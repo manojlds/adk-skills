@@ -2,9 +2,9 @@
 
 import pytest
 
-from adk_skills.core.models import SkillsConfig
-from adk_skills.exceptions import SkillNotFoundError
-from adk_skills.registry import SkillsRegistry
+from adk_skills_agent.core.models import SkillsConfig
+from adk_skills_agent.exceptions import SkillNotFoundError
+from adk_skills_agent.registry import SkillsRegistry
 
 
 class TestSkillsRegistryInit:
@@ -440,7 +440,7 @@ Instructions.
 
         skills = registry.list_metadata()
         assert len(skills) == 1
-        from adk_skills.core.models import SkillMetadata
+        from adk_skills_agent.core.models import SkillMetadata
 
         assert isinstance(skills[0], SkillMetadata)
 
