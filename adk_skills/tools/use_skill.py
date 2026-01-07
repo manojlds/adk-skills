@@ -26,7 +26,9 @@ def generate_available_skills_xml(registry: "SkillsRegistry") -> str:
         xml_parts.append("  <skill>")
         xml_parts.append(f"    <name>{metadata.name}</name>")
         # Escape description for XML
-        description = metadata.description.replace("&", "&amp;").replace("<", "&lt;")
+        description = (
+            metadata.description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
         xml_parts.append(f"    <description>{description}</description>")
         xml_parts.append("  </skill>")
 
@@ -35,25 +37,35 @@ def generate_available_skills_xml(registry: "SkillsRegistry") -> str:
     return "\n".join(xml_parts)
 
 
-def create_use_skill_tool(registry: "SkillsRegistry") -> Callable[[str], dict[str, Any]]:
+def create_use_skill_tool(
+    registry: "SkillsRegistry", include_skills_listing: bool = True
+) -> Callable[[str], dict[str, Any]]:
     """Create ADK tool for skill activation.
 
-    This tool enables on-demand skill activation. The tool description contains
-    an <available_skills> block listing all discovered skills, and when called,
-    it loads and returns the full skill instructions.
+    This tool enables on-demand skill activation. When include_skills_listing is True
+    (default), the tool description contains an <available_skills> block listing all
+    discovered skills. When False, the listing is omitted (useful when skills are
+    injected into the system prompt instead).
 
     Args:
         registry: SkillsRegistry instance with discovered skills
+        include_skills_listing: Whether to include <available_skills> XML in tool
+            description (default: True). Set to False when using prompt injection.
 
     Returns:
-        Callable tool function with embedded skill listing in docstring
+        Callable tool function with optional skill listing in docstring
 
     Example:
         >>> registry = SkillsRegistry()
         >>> registry.discover(["./skills"])
+        >>>
+        >>> # Pattern 1: Tool-based (default) - skills in tool description
         >>> use_skill = create_use_skill_tool(registry)
-        >>> result = use_skill("pdf-processing")
-        >>> print(result["instructions"])
+        >>>
+        >>> # Pattern 2: Prompt-based - skills in system prompt, not in tool
+        >>> prompt = registry.to_prompt_xml()
+        >>> use_skill = create_use_skill_tool(registry, include_skills_listing=False)
+        >>> agent = Agent(instruction=f"...\\n{prompt}", tools=[use_skill])
     """
 
     def use_skill(name: str) -> dict[str, Any]:
@@ -88,8 +100,12 @@ def create_use_skill_tool(registry: "SkillsRegistry") -> Callable[[str], dict[st
             "has_assets": skill.assets_dir is not None,
         }
 
-    # Generate XML and inject into docstring
-    available_skills_xml = generate_available_skills_xml(registry)
+    # Generate XML and inject into docstring if requested
+    if include_skills_listing:
+        available_skills_xml = generate_available_skills_xml(registry)
+    else:
+        available_skills_xml = ""
+
     if use_skill.__doc__:
         use_skill.__doc__ = use_skill.__doc__.format(available_skills_xml=available_skills_xml)
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from adk_skills.core.discovery import discover_skills
-from adk_skills.core.models import Skill, SkillMetadata, SkillsConfig
+from adk_skills.core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
 from adk_skills.core.parser import parse_full
 from adk_skills.core.validator import validate_skill_metadata
 from adk_skills.exceptions import SkillNotFoundError
@@ -168,12 +168,17 @@ class SkillsRegistry:
         """String representation."""
         return f"SkillsRegistry(skills={len(self._metadata_registry)})"
 
-    def create_use_skill_tool(self) -> Any:
+    def create_use_skill_tool(self, include_skills_listing: bool = True) -> Any:
         """Create ADK tool for skill activation.
 
         The tool description includes an <available_skills> block listing
-        all discovered skills. When called, it loads and returns the full
-        skill instructions.
+        all discovered skills (when include_skills_listing=True). When called,
+        it loads and returns the full skill instructions.
+
+        Args:
+            include_skills_listing: Whether to include <available_skills> XML in
+                tool description (default: True). Set to False when using prompt
+                injection to avoid duplication.
 
         Returns:
             Callable tool function for use with ADK agents
@@ -181,15 +186,24 @@ class SkillsRegistry:
         Example:
             >>> registry = SkillsRegistry()
             >>> registry.discover(["./skills"])
+            >>>
+            >>> # Pattern 1: Tool-based (default)
             >>> agent = Agent(
             ...     name="assistant",
             ...     model="gemini-2.5-flash",
             ...     tools=[registry.create_use_skill_tool()]
             ... )
+            >>>
+            >>> # Pattern 2: Prompt-based
+            >>> prompt = registry.to_prompt_xml()
+            >>> agent = Agent(
+            ...     instruction=f"You are helpful.\\n{prompt}",
+            ...     tools=[registry.create_use_skill_tool(include_skills_listing=False)]
+            ... )
         """
         from adk_skills.tools.use_skill import create_use_skill_tool
 
-        return create_use_skill_tool(self)
+        return create_use_skill_tool(self, include_skills_listing=include_skills_listing)
 
     def create_run_script_tool(self) -> Any:
         """Create ADK tool for executing skill scripts.
@@ -234,3 +248,138 @@ class SkillsRegistry:
         from adk_skills.tools.read_reference import create_read_reference_tool
 
         return create_read_reference_tool(self)
+
+    # Prompt injection utilities
+
+    def to_prompt_xml(self) -> str:
+        """Generate XML representation of skills for system prompt injection.
+
+        Returns XML block listing all available skills with name and description.
+        This can be injected into an agent's system prompt to make skills
+        available without using tools.
+
+        Returns:
+            XML string with <available_skills> block
+
+        Example:
+            >>> registry = SkillsRegistry()
+            >>> registry.discover(["./skills"])
+            >>> prompt = registry.to_prompt_xml()
+            >>> print(prompt)
+            <available_skills>
+              <skill>
+                <name>calculator</name>
+                <description>Perform calculations</description>
+              </skill>
+            </available_skills>
+        """
+        from adk_skills.tools.use_skill import generate_available_skills_xml
+
+        return generate_available_skills_xml(self)
+
+    def to_prompt_text(self) -> str:
+        """Generate plain text representation of skills for system prompt injection.
+
+        Returns a human-readable list of available skills with descriptions.
+
+        Returns:
+            Plain text string listing skills
+
+        Example:
+            >>> registry = SkillsRegistry()
+            >>> registry.discover(["./skills"])
+            >>> print(registry.to_prompt_text())
+            Available Skills:
+            - calculator: Perform calculations
+            - hello-world: Simple greeting skill
+        """
+        skills_metadata = self.list_metadata()
+
+        if not skills_metadata:
+            return "No skills available."
+
+        lines = ["Available Skills:"]
+        for metadata in skills_metadata:
+            lines.append(f"- {metadata.name}: {metadata.description}")
+
+        return "\n".join(lines)
+
+    def get_skills_prompt(self, format: str = "xml") -> str:
+        """Get skills as formatted prompt text for injection.
+
+        Convenience method that supports multiple output formats.
+
+        Args:
+            format: Output format - "xml" or "text" (default: "xml")
+
+        Returns:
+            Formatted string representation of skills
+
+        Raises:
+            ValueError: If format is not supported
+
+        Example:
+            >>> registry = SkillsRegistry()
+            >>> registry.discover(["./skills"])
+            >>> xml_prompt = registry.get_skills_prompt("xml")
+            >>> text_prompt = registry.get_skills_prompt("text")
+        """
+        if format == "xml":
+            return self.to_prompt_xml()
+        elif format == "text":
+            return self.to_prompt_text()
+        else:
+            raise ValueError(f"Unsupported format: {format}. Use 'xml' or 'text'.")
+
+    # Validation utilities
+
+    def validate_all(self, strict: bool = True) -> dict[str, ValidationResult]:
+        """Validate all discovered skills.
+
+        Runs validation on all skills in the registry and returns results.
+
+        Args:
+            strict: If True, enforce strict validation (warnings for missing optional fields)
+
+        Returns:
+            Dictionary mapping skill names to ValidationResult objects
+
+        Example:
+            >>> registry = SkillsRegistry()
+            >>> registry.discover(["./skills"])
+            >>> results = registry.validate_all(strict=True)
+            >>> for name, result in results.items():
+            ...     if not result.valid:
+            ...         print(f"{name}: {result.errors}")
+        """
+        results = {}
+        for metadata in self.list_metadata():
+            results[metadata.name] = validate_skill_metadata(metadata, strict=strict)
+        return results
+
+    def validate_skill_by_name(self, name: str, strict: bool = True) -> ValidationResult:
+        """Validate a specific skill by name.
+
+        Args:
+            name: Skill name to validate
+            strict: If True, enforce strict validation
+
+        Returns:
+            ValidationResult for the skill
+
+        Raises:
+            SkillNotFoundError: If skill not found
+
+        Example:
+            >>> registry = SkillsRegistry()
+            >>> registry.discover(["./skills"])
+            >>> result = registry.validate_skill_by_name("calculator")
+            >>> if result.valid:
+            ...     print("Skill is valid!")
+        """
+        metadata = self.get_metadata(name)
+        if metadata is None:
+            raise SkillNotFoundError(
+                f"Skill '{name}' not found. Available skills: {list(self._metadata_registry.keys())}"
+            )
+        return validate_skill_metadata(metadata, strict=strict)
