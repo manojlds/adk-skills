@@ -12,18 +12,18 @@
 
 ### Installation
 
-**Development Version** (recommended for now):
+**From PyPI**:
+
+```bash
+pip install adk-skills
+```
+
+**Development Version**:
 
 ```bash
 git clone https://github.com/manojlds/adk-skills.git
 cd adk-skills
 pip install -e .
-```
-
-**PyPI** (coming soon):
-
-```bash
-pip install adk-skills
 ```
 
 ### Basic Usage

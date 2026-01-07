@@ -1,0 +1,19 @@
+# Include documentation and metadata files
+include README.md
+include LICENSE
+include DESIGN.md
+include IMPLEMENTATION_PLAN.md
+include PROJECT_STRUCTURE.md
+
+# Include example files
+recursive-include examples *.py
+recursive-include examples *.md
+
+# Include test files (for source distributions)
+recursive-include tests *.py
+
+# Exclude unnecessary files
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .DS_Store
+global-exclude *.so
