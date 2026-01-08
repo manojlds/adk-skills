@@ -4,7 +4,7 @@
 
 [![PyPI version](https://badge.fury.io/py/adk-skills-agent.svg)](https://badge.fury.io/py/adk-skills-agent)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 **adk-skills** is a Python library that enables [Google ADK](https://github.com/google/adk-python) agents to discover, load, and use skills in the standard [Agent Skills](https://agentskills.io) format. Write skills once, use them across Claude, ADK, and any platform that supports the Agent Skills standard.
 
@@ -423,7 +423,7 @@ pytest  # Run tests (129 tests, 90%+ coverage)
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file for details
+Apache 2.0 License - see [LICENSE](LICENSE) file for details
 
 ## 🙏 Acknowledgments
 
