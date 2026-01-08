@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from adk_skills.exceptions import SkillParseError
-from adk_skills.utils.yaml_parser import extract_frontmatter, parse_frontmatter
+from adk_skills_agent.exceptions import SkillParseError
+from adk_skills_agent.utils.yaml_parser import extract_frontmatter, parse_frontmatter
 
 
 class TestParseFrontmatter:

@@ -2,9 +2,9 @@
 
 import pytest
 
-from adk_skills import SkillsRegistry
-from adk_skills.exceptions import SkillExecutionError, SkillNotFoundError
-from adk_skills.tools.read_reference import create_read_reference_tool
+from adk_skills_agent import SkillsRegistry
+from adk_skills_agent.exceptions import SkillExecutionError, SkillNotFoundError
+from adk_skills_agent.tools.read_reference import create_read_reference_tool
 
 
 class TestCreateReadReferenceTool:

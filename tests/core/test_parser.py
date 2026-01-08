@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from adk_skills.core.models import Skill, SkillMetadata
-from adk_skills.core.parser import find_skill_md, parse_full, parse_metadata
-from adk_skills.exceptions import SkillParseError
+from adk_skills_agent.core.models import Skill, SkillMetadata
+from adk_skills_agent.core.parser import find_skill_md, parse_full, parse_metadata
+from adk_skills_agent.exceptions import SkillParseError
 
 
 class TestFindSkillMd:

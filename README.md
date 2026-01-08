@@ -2,7 +2,7 @@
 
 > Bring [Agent Skills](https://agentskills.io) to Google's Agent Development Kit (ADK)
 
-[![PyPI version](https://badge.fury.io/py/adk-skills.svg)](https://badge.fury.io/py/adk-skills)
+[![PyPI version](https://badge.fury.io/py/adk-skills-agent.svg)](https://badge.fury.io/py/adk-skills-agent)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -12,7 +12,13 @@
 
 ### Installation
 
-**Development Version** (recommended for now):
+**From PyPI**:
+
+```bash
+pip install adk-skills-agent
+```
+
+**Development Version**:
 
 ```bash
 git clone https://github.com/manojlds/adk-skills.git
@@ -20,17 +26,11 @@ cd adk-skills
 pip install -e .
 ```
 
-**PyPI** (coming soon):
-
-```bash
-pip install adk-skills
-```
-
 ### Basic Usage
 
 ```python
 from google.adk.agents import Agent
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 # Discover skills
 registry = SkillsRegistry()
@@ -105,7 +105,7 @@ Use this skill to extract structured data from websites.
 ### Discover Skills
 
 ```python
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 registry = SkillsRegistry()
 count = registry.discover(["./skills", "~/.adk/skills"])
@@ -119,7 +119,7 @@ for meta in registry.list_metadata():
 
 ```python
 from google.adk.agents import Agent
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 registry = SkillsRegistry()
 registry.discover(["./skills"])
@@ -172,7 +172,7 @@ research_agent = Agent(
 Inject skills directly into system prompts instead of using tools:
 
 ```python
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 registry = SkillsRegistry()
 registry.discover(["./skills"])
@@ -198,7 +198,7 @@ agent = Agent(
 Validate skills against the agentskills.io specification:
 
 ```python
-from adk_skills import SkillsRegistry
+from adk_skills_agent import SkillsRegistry
 
 registry = SkillsRegistry()
 registry.discover(["./skills"])
@@ -222,7 +222,7 @@ if result.valid:
 Use the `SkillsAgent` class for easy agent creation with built-in skills support:
 
 ```python
-from adk_skills import SkillsAgent
+from adk_skills_agent import SkillsAgent
 
 # Create agent with skills integrated
 agent = SkillsAgent(
@@ -249,7 +249,7 @@ Add skills to an existing agent:
 
 ```python
 from google.adk.agents import Agent
-from adk_skills import with_skills
+from adk_skills_agent import with_skills
 
 # Create standard agent
 agent = Agent(
@@ -266,7 +266,7 @@ agent = with_skills(agent, ["./skills"])
 Create an agent with skills in one call:
 
 ```python
-from adk_skills import create_skills_agent
+from adk_skills_agent import create_skills_agent
 
 agent = create_skills_agent(
     name="assistant",
@@ -281,7 +281,7 @@ agent = create_skills_agent(
 Inject skills into an instruction string:
 
 ```python
-from adk_skills import inject_skills_prompt
+from adk_skills_agent import inject_skills_prompt
 
 instruction = "You are a helpful assistant."
 full_instruction = inject_skills_prompt(

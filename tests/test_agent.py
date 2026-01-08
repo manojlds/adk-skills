@@ -2,9 +2,9 @@
 
 import pytest
 
-from adk_skills.agent import SkillsAgent
-from adk_skills.core.models import SkillsConfig
-from adk_skills.exceptions import SkillConfigError
+from adk_skills_agent.agent import SkillsAgent
+from adk_skills_agent.core.models import SkillsConfig
+from adk_skills_agent.exceptions import SkillConfigError
 
 
 class TestSkillsAgentInit:

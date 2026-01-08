@@ -4,8 +4,8 @@ import re
 from pathlib import Path
 from typing import Union
 
-from adk_skills.core.models import Skill, SkillMetadata, ValidationResult
-from adk_skills.core.parser import find_skill_md, parse_metadata
+from adk_skills_agent.core.models import Skill, SkillMetadata, ValidationResult
+from adk_skills_agent.core.parser import find_skill_md, parse_metadata
 
 
 def validate_skill_name(name: str) -> list[str]:

@@ -29,19 +29,19 @@ jobs:
 
     - name: Lint with ruff
       run: |
-        ruff check adk_skills tests
+        ruff check adk_skills_agent tests
 
     - name: Format check with black
       run: |
-        black --check adk_skills tests
+        black --check adk_skills_agent tests
 
     - name: Type check with mypy
       run: |
-        mypy adk_skills
+        mypy adk_skills_agent
 
     - name: Test with pytest
       run: |
-        pytest --cov=adk_skills --cov-report=xml --cov-report=term
+        pytest --cov=adk_skills_agent --cov-report=xml --cov-report=term
 
     - name: Upload coverage
       uses: codecov/codecov-action@v3

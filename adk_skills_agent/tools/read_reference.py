@@ -2,10 +2,10 @@
 
 from typing import TYPE_CHECKING, Any, Callable
 
-from adk_skills.exceptions import SkillExecutionError, SkillNotFoundError
+from adk_skills_agent.exceptions import SkillExecutionError, SkillNotFoundError
 
 if TYPE_CHECKING:
-    from adk_skills.registry import SkillsRegistry
+    from adk_skills_agent.registry import SkillsRegistry
 
 
 def create_read_reference_tool(

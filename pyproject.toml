@@ -3,7 +3,7 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "adk-skills"
+name = "adk-skills-agent"
 version = "0.1.0"
 description = "Agent Skills support for Google's Agent Development Kit (ADK)"
 authors = [
@@ -41,17 +41,17 @@ dev = [
 ]
 
 [project.scripts]
-adk-skills = "adk_skills.cli:main"
+adk-skills = "adk_skills_agent.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/yourusername/adk-skills"
-Documentation = "https://github.com/yourusername/adk-skills"
-Repository = "https://github.com/yourusername/adk-skills"
-Issues = "https://github.com/yourusername/adk-skills/issues"
+Homepage = "https://github.com/manojlds/adk-skills"
+Documentation = "https://github.com/manojlds/adk-skills"
+Repository = "https://github.com/manojlds/adk-skills"
+Issues = "https://github.com/manojlds/adk-skills/issues"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["adk_skills*"]
+include = ["adk_skills_agent*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -65,7 +65,7 @@ addopts = [
 ]
 
 [tool.coverage.run]
-source = ["adk_skills"]
+source = ["adk_skills_agent"]
 omit = ["*/tests/*", "*/test_*"]
 
 [tool.coverage.report]

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from adk_skills.core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
+from adk_skills_agent.core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
 
 
 class TestSkillMetadata:

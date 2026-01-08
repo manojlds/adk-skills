@@ -3,9 +3,9 @@
 from pathlib import Path
 from typing import Optional
 
-from adk_skills.core.models import Skill, SkillMetadata
-from adk_skills.exceptions import SkillParseError
-from adk_skills.utils.yaml_parser import parse_frontmatter
+from adk_skills_agent.core.models import Skill, SkillMetadata
+from adk_skills_agent.exceptions import SkillParseError
+from adk_skills_agent.utils.yaml_parser import parse_frontmatter
 
 
 def find_skill_md(skill_dir: Path) -> Optional[Path]:

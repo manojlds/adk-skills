@@ -270,7 +270,7 @@ Helper scripts for development:
 ### Public API (exported from `__init__.py`)
 
 ```python
-from adk_skills import (
+from adk_skills_agent import (
     # Core classes
     SkillsManager,
     Skill,
@@ -294,9 +294,9 @@ from adk_skills import (
 
 ```python
 # Within package
-from adk_skills.core.skill import Skill
-from adk_skills.core.parser import SkillParser
-from adk_skills.executors.python_executor import PythonExecutor
+from adk_skills_agent.core.skill import Skill
+from adk_skills_agent.core.parser import SkillParser
+from adk_skills_agent.executors.python_executor import PythonExecutor
 ```
 
 ## Configuration Files

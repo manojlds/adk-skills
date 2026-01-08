@@ -8,8 +8,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from adk_skills.core.models import SkillsConfig
-from adk_skills.registry import SkillsRegistry
+from adk_skills_agent.core.models import SkillsConfig
+from adk_skills_agent.registry import SkillsRegistry
 
 
 def with_skills(
@@ -38,7 +38,7 @@ def with_skills(
 
     Example:
         >>> from google.adk.agents import Agent
-        >>> from adk_skills import with_skills
+        >>> from adk_skills_agent import with_skills
         >>>
         >>> # Create a standard ADK agent
         >>> agent = Agent(
@@ -106,7 +106,7 @@ def create_skills_agent(
         Configured google.adk.agents.Agent with skills support
 
     Example:
-        >>> from adk_skills import create_skills_agent
+        >>> from adk_skills_agent import create_skills_agent
         >>>
         >>> agent = create_skills_agent(
         ...     name="assistant",
@@ -118,7 +118,7 @@ def create_skills_agent(
     Note:
         This requires google.adk to be installed.
     """
-    from adk_skills.agent import SkillsAgent
+    from adk_skills_agent.agent import SkillsAgent
 
     skills_agent = SkillsAgent(
         name=name,
@@ -153,7 +153,7 @@ def inject_skills_prompt(
         Instruction with skills listing appended
 
     Example:
-        >>> from adk_skills import inject_skills_prompt
+        >>> from adk_skills_agent import inject_skills_prompt
         >>>
         >>> instruction = "You are a helpful assistant."
         >>> full_instruction = inject_skills_prompt(

@@ -5,7 +5,7 @@ from typing import Any
 
 import yaml
 
-from adk_skills.exceptions import SkillParseError
+from adk_skills_agent.exceptions import SkillParseError
 
 
 def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
