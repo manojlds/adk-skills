@@ -27,7 +27,9 @@ class SkillsStore:
         records = self._fetch_records(app_name)
         return [self._record_to_metadata(record) for record in records]
 
-    def get_skill(self, name: str, app_name: str | None = None, version: int | None = None) -> Skill:
+    def get_skill(
+        self, name: str, app_name: str | None = None, version: int | None = None
+    ) -> Skill:
         """Fetch a skill by name (and optional version)."""
         record = self._fetch_skill_record(name, app_name=app_name, version=version)
         if record is None and app_name is not None:
@@ -40,18 +42,24 @@ class SkillsStore:
         stmt = select(SkillRecord)
         if app_name is not None:
             stmt = stmt.where((SkillRecord.app_name == app_name) | (SkillRecord.app_name.is_(None)))
-        stmt = stmt.order_by(SkillRecord.name, SkillRecord.app_name.is_(None), SkillRecord.version.desc())
+        stmt = stmt.order_by(
+            SkillRecord.name, SkillRecord.app_name.is_(None), SkillRecord.version.desc()
+        )
         records = list(self._session.execute(stmt).scalars())
         return list(self._latest_records(records, app_name))
 
-    def _latest_records(self, records: Iterable[SkillRecord], app_name: str | None) -> Iterable[SkillRecord]:
+    def _latest_records(
+        self, records: Iterable[SkillRecord], app_name: str | None
+    ) -> Iterable[SkillRecord]:
         selected: dict[str, SkillRecord] = {}
         for record in records:
             if record.name not in selected:
                 selected[record.name] = record
         return selected.values()
 
-    def _fetch_skill_record(self, name: str, app_name: str | None, version: int | None) -> SkillRecord | None:
+    def _fetch_skill_record(
+        self, name: str, app_name: str | None, version: int | None
+    ) -> SkillRecord | None:
         stmt: Select[tuple[SkillRecord]] = select(SkillRecord).where(SkillRecord.name == name)
         if app_name is None:
             stmt = stmt.where(SkillRecord.app_name.is_(None))
@@ -76,7 +84,9 @@ class SkillsStore:
         )
 
     def _record_to_skill(self, record: SkillRecord) -> Skill:
-        location = Path(record.location) if record.location else Path(f"/__db__/{record.name}/SKILL.md")
+        location = (
+            Path(record.location) if record.location else Path(f"/__db__/{record.name}/SKILL.md")
+        )
         skill_dir = Path(record.skill_dir) if record.skill_dir else Path(f"/__db__/{record.name}")
         return Skill(
             name=record.name,
