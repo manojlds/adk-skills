@@ -76,8 +76,7 @@ def with_skills(
             agent.tools.extend(tools)
     else:
         raise AttributeError(
-            "Agent does not have a 'tools' attribute. "
-            "Use SkillsRegistry directly to create tools."
+            "Agent does not have a 'tools' attribute. Use SkillsRegistry directly to create tools."
         )
 
     return agent

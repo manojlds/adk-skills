@@ -34,7 +34,6 @@ dependencies = [
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
-    "black>=23.0",
     "ruff>=0.1",
     "mypy>=1.0",
     "types-pyyaml>=6.0",
@@ -83,11 +82,6 @@ exclude_lines = [
     "@abstractmethod",
 ]
 
-[tool.black]
-line-length = 100
-target-version = ["py39"]
-include = '\.pyi?$'
-
 [tool.ruff]
 line-length = 100
 target-version = "py39"
@@ -103,7 +97,7 @@ select = [
     "UP",  # pyupgrade
 ]
 ignore = [
-    "E501",  # line too long (handled by black)
+    "E501",  # line too long (handled by ruff format)
     "B008",  # do not perform function calls in argument defaults
     "C901",  # too complex
 ]
