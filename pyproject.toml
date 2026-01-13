@@ -39,6 +39,9 @@ dev = [
     "mypy>=1.0",
     "types-pyyaml>=6.0",
 ]
+db = [
+    "sqlalchemy>=2.0",
+]
 
 [project.scripts]
 adk-skills = "adk_skills_agent.cli:main"
