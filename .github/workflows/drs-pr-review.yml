@@ -1,0 +1,181 @@
+name: DRS PR Review
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, labeled]
+
+jobs:
+  verify-contributor:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      is-trusted: ${{ steps.check.outputs.is-trusted }}
+      has-review-label: ${{ steps.check.outputs.has-review-label }}
+    steps:
+      - name: Check contributor status
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+          REPO="${{ github.repository }}"
+
+          echo "Checking if $AUTHOR is a trusted contributor..."
+
+          if gh api "/repos/$REPO/collaborators/$AUTHOR" --silent 2>/dev/null; then
+            echo "✅ $AUTHOR is a repository collaborator"
+            echo "is-trusted=true" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️  $AUTHOR is an external contributor"
+            echo "is-trusted=false" >> $GITHUB_OUTPUT
+          fi
+
+          LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
+          if echo "$LABELS" | grep -q "safe-to-review"; then
+            echo "✅ PR has 'safe-to-review' label"
+            echo "has-review-label=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-review-label=false" >> $GITHUB_OUTPUT
+          fi
+
+  review-trusted:
+    runs-on: ubuntu-latest
+    needs: verify-contributor
+    if: needs.verify-contributor.outputs.is-trusted == 'true'
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install DRS CLI
+        run: npm install -g opencode-ai @diff-review-system/drs
+
+      - name: Setup OpenCode Zen Authentication
+        if: env.OPENCODE_ZEN_API_KEY != ''
+        env:
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+        run: |
+          echo "🔑 Setting up OpenCode Zen authentication..."
+          mkdir -p ~/.local/share/opencode
+          cat > ~/.local/share/opencode/auth.json <<EOF
+          {
+            "opencode": {
+              "type": "api",
+              "key": "${OPENCODE_ZEN_API_KEY}"
+            }
+          }
+          EOF
+          echo "✅ OpenCode Zen auth.json created"
+
+      - name: Review Pull Request (Trusted Contributor)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          echo "🚀 Starting PR review for trusted contributor..."
+          echo "👤 Author: ${{ github.event.pull_request.user.login }} (trusted)"
+
+          drs review-pr \
+            --owner ${{ github.event.repository.owner.login }} \
+            --repo ${{ github.event.repository.name }} \
+            --pr ${{ github.event.pull_request.number }} \
+            --post-comments
+
+  review-external:
+    runs-on: ubuntu-latest
+    needs: verify-contributor
+    if: |
+      needs.verify-contributor.outputs.is-trusted == 'false' &&
+      needs.verify-contributor.outputs.has-review-label == 'true'
+    environment: external-pr-review
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install DRS CLI
+        run: npm install -g opencode-ai @diff-review-system/drs
+
+      - name: Setup OpenCode Zen Authentication
+        if: env.OPENCODE_ZEN_API_KEY != ''
+        env:
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+        run: |
+          echo "🔑 Setting up OpenCode Zen authentication..."
+          mkdir -p ~/.local/share/opencode
+          cat > ~/.local/share/opencode/auth.json <<EOF
+          {
+            "opencode": {
+              "type": "api",
+              "key": "${OPENCODE_ZEN_API_KEY}"
+            }
+          }
+          EOF
+          echo "✅ OpenCode Zen auth.json created"
+
+      - name: Review Pull Request (External Contributor)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          echo "🚀 Starting PR review for external contributor..."
+          echo "👤 Author: ${{ github.event.pull_request.user.login }} (external - approved)"
+
+          drs review-pr \
+            --owner ${{ github.event.repository.owner.login }} \
+            --repo ${{ github.event.repository.name }} \
+            --pr ${{ github.event.pull_request.number }} \
+            --post-comments
+
+  notify-external:
+    runs-on: ubuntu-latest
+    needs: verify-contributor
+    if: |
+      needs.verify-contributor.outputs.is-trusted == 'false' &&
+      needs.verify-contributor.outputs.has-review-label == 'false'
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Post notification comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --repo ${{ github.repository }} \
+            --body "👋 Thanks for your contribution!
+
+          Since this is from an external contributor, automated review requires approval from a repository maintainer.
+
+          **Maintainers:** To trigger the automated review, either:
+          1. Add the \`safe-to-review\` label to this PR
+          2. Approve the workflow run in the Actions tab
+
+          This helps prevent abuse and protects API costs. Thank you for understanding! 🙏"
