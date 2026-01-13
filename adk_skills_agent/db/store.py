@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
@@ -22,14 +22,12 @@ class SkillsStore:
         """Create tables if they do not exist."""
         Base.metadata.create_all(bind=self._session.get_bind())
 
-    def list_metadata(self, app_name: Optional[str] = None) -> list[SkillMetadata]:
+    def list_metadata(self, app_name: str | None = None) -> list[SkillMetadata]:
         """List metadata for the latest version of each skill."""
         records = self._fetch_records(app_name)
         return [self._record_to_metadata(record) for record in records]
 
-    def get_skill(
-        self, name: str, app_name: Optional[str] = None, version: Optional[int] = None
-    ) -> Skill:
+    def get_skill(self, name: str, app_name: str | None = None, version: int | None = None) -> Skill:
         """Fetch a skill by name (and optional version)."""
         record = self._fetch_skill_record(name, app_name=app_name, version=version)
         if record is None and app_name is not None:
@@ -38,7 +36,7 @@ class SkillsStore:
             raise KeyError(f"Skill '{name}' not found in database.")
         return self._record_to_skill(record)
 
-    def _fetch_records(self, app_name: Optional[str]) -> list[SkillRecord]:
+    def _fetch_records(self, app_name: str | None) -> list[SkillRecord]:
         stmt = select(SkillRecord)
         if app_name is not None:
             stmt = stmt.where((SkillRecord.app_name == app_name) | (SkillRecord.app_name.is_(None)))
@@ -46,18 +44,14 @@ class SkillsStore:
         records = list(self._session.execute(stmt).scalars())
         return list(self._latest_records(records, app_name))
 
-    def _latest_records(
-        self, records: Iterable[SkillRecord], app_name: Optional[str]
-    ) -> Iterable[SkillRecord]:
+    def _latest_records(self, records: Iterable[SkillRecord], app_name: str | None) -> Iterable[SkillRecord]:
         selected: dict[str, SkillRecord] = {}
         for record in records:
             if record.name not in selected:
                 selected[record.name] = record
         return selected.values()
 
-    def _fetch_skill_record(
-        self, name: str, app_name: Optional[str], version: Optional[int]
-    ) -> SkillRecord | None:
+    def _fetch_skill_record(self, name: str, app_name: str | None, version: int | None) -> SkillRecord | None:
         stmt: Select[tuple[SkillRecord]] = select(SkillRecord).where(SkillRecord.name == name)
         if app_name is None:
             stmt = stmt.where(SkillRecord.app_name.is_(None))
