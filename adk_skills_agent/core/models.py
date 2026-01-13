@@ -146,6 +146,7 @@ class SkillsConfig:
         allow_experimental: Allow experimental features (e.g., allowed-tools)
         db_enabled: Enable database-backed skills
         db_session: SQLAlchemy session for persistence (optional)
+        db_auto_create: Automatically create DB schema on startup
         app_name: Optional application name for scoping skills
     """
 
@@ -158,6 +159,7 @@ class SkillsConfig:
     allow_experimental: bool = False
     db_enabled: bool = False
     db_session: Optional[Any] = None
+    db_auto_create: bool = False
     app_name: Optional[str] = None
 
 

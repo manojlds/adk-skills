@@ -216,6 +216,7 @@ session = Session(engine)
 config = SkillsConfig(
     db_enabled=True,
     db_session=session,
+    db_auto_create=False,  # Leave schema management to your app
     app_name="support-assistant",
 )
 registry = SkillsRegistry(config=config)
@@ -223,6 +224,23 @@ registry = SkillsRegistry(config=config)
 # Skills metadata and prompts now include DB entries.
 skills_prompt = registry.get_skills_prompt("xml")
 ```
+
+#### Session ownership & migrations
+
+`adk-skills-agent` expects the host application to manage SQLAlchemy engine/session
+lifecycle and database migrations. In production services (e.g., FastAPI), keep
+schema creation and transaction boundaries in the application layer.
+
+For Alembic, you can include the library metadata in your `env.py`:
+
+```python
+from adk_skills_agent.db import get_metadata
+
+target_metadata = get_metadata()
+```
+
+You can also import `Base.metadata` directly from `adk_skills_agent.db.models`
+if you prefer. Use `db_auto_create=True` only for local demos/tests.
 
 ### Skills Validation
 
