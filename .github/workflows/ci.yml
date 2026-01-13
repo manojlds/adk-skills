@@ -31,9 +31,9 @@ jobs:
       run: |
         ruff check adk_skills_agent tests
 
-    - name: Format check with black
+    - name: Format check with ruff
       run: |
-        black --check adk_skills_agent tests
+        ruff format --check adk_skills_agent tests
 
     - name: Type check with mypy
       run: |

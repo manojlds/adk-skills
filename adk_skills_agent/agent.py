@@ -200,7 +200,7 @@ class SkillsAgent:
             from google.adk.agents import Agent  # type: ignore
         except ImportError as e:
             raise ImportError(
-                "google.adk is required to build agents. " "Install it with: pip install google-adk"
+                "google.adk is required to build agents. Install it with: pip install google-adk"
             ) from e
 
         return Agent(
@@ -213,7 +213,4 @@ class SkillsAgent:
 
     def __repr__(self) -> str:
         """String representation."""
-        return (
-            f"SkillsAgent(name={self.name!r}, model={self.model!r}, "
-            f"skills={len(self.registry)})"
-        )
+        return f"SkillsAgent(name={self.name!r}, model={self.model!r}, skills={len(self.registry)})"
