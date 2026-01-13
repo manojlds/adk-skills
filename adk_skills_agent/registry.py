@@ -36,6 +36,17 @@ class SkillsRegistry:
         self.config = config or SkillsConfig()
         self._metadata_registry: dict[str, SkillMetadata] = {}
         self._skill_cache: dict[str, Skill] = {}
+        self._db_metadata_registry: dict[str, SkillMetadata] = {}
+        self._db_store = None
+
+        if self.config.db_enabled:
+            if self.config.db_session is None:
+                raise ValueError("db_session is required when db_enabled is True.")
+            from adk_skills_agent.db.store import SkillsStore
+
+            self._db_store = SkillsStore(self.config.db_session)
+            self._db_store.ensure_schema()
+            self._refresh_db_metadata()
 
         # Auto-discover if configured
         if self.config.auto_discover and self.config.skills_directories:
@@ -83,7 +94,10 @@ class SkillsRegistry:
         Returns:
             List of SkillMetadata for all discovered skills
         """
-        return list(self._metadata_registry.values())
+        if self._db_store is not None:
+            self._refresh_db_metadata()
+        merged = {**self._metadata_registry, **self._db_metadata_registry}
+        return list(merged.values())
 
     def get_metadata(self, name: str) -> Optional[SkillMetadata]:
         """Get metadata for a specific skill.
@@ -94,6 +108,10 @@ class SkillsRegistry:
         Returns:
             SkillMetadata if found, None otherwise
         """
+        if self._db_store is not None:
+            self._refresh_db_metadata()
+        if name in self._db_metadata_registry:
+            return self._db_metadata_registry[name]
         return self._metadata_registry.get(name)
 
     def load_skill(self, name: str) -> Skill:
@@ -121,9 +139,15 @@ class SkillsRegistry:
         # Get metadata
         metadata = self.get_metadata(name)
         if metadata is None:
+            available = {**self._metadata_registry, **self._db_metadata_registry}
             raise SkillNotFoundError(
-                f"Skill '{name}' not found. Available skills: {list(self._metadata_registry.keys())}"
+                f"Skill '{name}' not found. Available skills: {list(available.keys())}"
             )
+
+        if self._db_store is not None and name in self._db_metadata_registry:
+            skill = self._db_store.get_skill(name, app_name=self.config.app_name)
+            self._skill_cache[name] = skill
+            return skill
 
         # Parse full skill
         skill = parse_full(metadata.location)
@@ -142,7 +166,9 @@ class SkillsRegistry:
         Returns:
             True if skill exists
         """
-        return name in self._metadata_registry
+        if self._db_store is not None:
+            self._refresh_db_metadata()
+        return name in self._metadata_registry or name in self._db_metadata_registry
 
     def clear_cache(self) -> None:
         """Clear the skill cache.
@@ -154,15 +180,20 @@ class SkillsRegistry:
     def clear(self) -> None:
         """Clear all discovered skills and cache."""
         self._metadata_registry.clear()
+        self._db_metadata_registry.clear()
         self._skill_cache.clear()
 
     def __len__(self) -> int:
         """Return number of discovered skills."""
-        return len(self._metadata_registry)
+        if self._db_store is not None:
+            self._refresh_db_metadata()
+        return len(self._metadata_registry) + len(self._db_metadata_registry)
 
     def __contains__(self, name: str) -> bool:
         """Check if skill exists (supports 'in' operator)."""
-        return name in self._metadata_registry
+        if self._db_store is not None:
+            self._refresh_db_metadata()
+        return name in self._metadata_registry or name in self._db_metadata_registry
 
     def __repr__(self) -> str:
         """String representation."""
@@ -379,7 +410,14 @@ class SkillsRegistry:
         """
         metadata = self.get_metadata(name)
         if metadata is None:
+            available = {**self._metadata_registry, **self._db_metadata_registry}
             raise SkillNotFoundError(
-                f"Skill '{name}' not found. Available skills: {list(self._metadata_registry.keys())}"
+                f"Skill '{name}' not found. Available skills: {list(available.keys())}"
             )
         return validate_skill_metadata(metadata, strict=strict)
+
+    def _refresh_db_metadata(self) -> None:
+        if self._db_store is None:
+            return
+        db_metadata = self._db_store.list_metadata(app_name=self.config.app_name)
+        self._db_metadata_registry = {metadata.name: metadata for metadata in db_metadata}

@@ -193,6 +193,37 @@ agent = Agent(
 )
 ```
 
+### Database-Backed Skills (Optional)
+
+Persist skills in a database using the optional SQLAlchemy support. Install the extra:
+
+```bash
+pip install adk-skills-agent[db]
+```
+
+Then provide a SQLAlchemy session to `SkillsRegistry`:
+
+```python
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from adk_skills_agent import SkillsRegistry
+from adk_skills_agent.core.models import SkillsConfig
+
+engine = create_engine("sqlite:///skills.db")
+session = Session(engine)
+
+config = SkillsConfig(
+    db_enabled=True,
+    db_session=session,
+    app_name="support-assistant",
+)
+registry = SkillsRegistry(config=config)
+
+# Skills metadata and prompts now include DB entries.
+skills_prompt = registry.get_skills_prompt("xml")
+```
+
 ### Skills Validation
 
 Validate skills against the agentskills.io specification:

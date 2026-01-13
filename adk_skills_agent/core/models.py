@@ -144,6 +144,9 @@ class SkillsConfig:
         sandbox_mode: Run scripts in sandboxed environment
         strict_validation: Enforce strict spec validation
         allow_experimental: Allow experimental features (e.g., allowed-tools)
+        db_enabled: Enable database-backed skills
+        db_session: SQLAlchemy session for persistence (optional)
+        app_name: Optional application name for scoping skills
     """
 
     skills_directories: list[Path] = field(default_factory=list)
@@ -153,6 +156,9 @@ class SkillsConfig:
     sandbox_mode: bool = True
     strict_validation: bool = True
     allow_experimental: bool = False
+    db_enabled: bool = False
+    db_session: Optional[Any] = None
+    app_name: Optional[str] = None
 
 
 @dataclass
