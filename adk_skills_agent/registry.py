@@ -45,7 +45,8 @@ class SkillsRegistry:
             from adk_skills_agent.db.store import SkillsStore
 
             self._db_store = SkillsStore(self.config.db_session)
-            self._db_store.ensure_schema()
+            if self.config.db_auto_create:
+                self._db_store.ensure_schema()
             self._refresh_db_metadata()
 
         # Auto-discover if configured
