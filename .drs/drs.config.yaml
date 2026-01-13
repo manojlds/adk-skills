@@ -1,0 +1,21 @@
+review:
+  defaultModel: opencode/glm-4.7-free
+
+  agents:
+    - security
+    - quality
+    - style
+    - performance
+
+  ignorePatterns:
+    - "*.md"
+    - "**/__pycache__/**"
+    - "**/tests/**"
+    - "**/__tests__/**"
+    - "**/__mocks__/**"
+    - "*.lock"
+    - "poetry.lock"
+    - "uv.lock"
+    - "package-lock.json"
+    - "yarn.lock"
+    - "pnpm-lock.yaml"
