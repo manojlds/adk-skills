@@ -38,6 +38,7 @@ dev = [
     "ruff>=0.1",
     "mypy>=1.0",
     "types-pyyaml>=6.0",
+    "sqlalchemy>=2.0",
 ]
 db = [
     "sqlalchemy>=2.0",
