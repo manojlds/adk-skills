@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Optional, cast
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
@@ -69,7 +70,7 @@ class SkillsStore:
             stmt = stmt.where(SkillRecord.version == version)
         else:
             stmt = stmt.order_by(SkillRecord.version.desc())
-        return self._session.execute(stmt).scalars().first()
+        return cast(Optional[SkillRecord], self._session.execute(stmt).scalars().first())
 
     def _record_to_metadata(self, record: SkillRecord) -> SkillMetadata:
         location = Path(record.location) if record.location else Path(f"/__db__/{record.name}")
