@@ -686,6 +686,61 @@ Instructions.
         with pytest.raises(ValueError, match="Unsupported format"):
             registry.get_skills_prompt(format="invalid")
 
+    def test_inject_skills_prompt_with_empty_registry(self):
+        """Test inject_skills_prompt with empty registry returns unchanged instruction."""
+        registry = SkillsRegistry()
+        instruction = "You are a helpful assistant."
+        result = registry.inject_skills_prompt(instruction, format="xml")
+
+        # Should return unchanged instruction when no skills
+        assert result == instruction
+
+    def test_inject_skills_prompt_xml_format(self, tmp_path):
+        """Test inject_skills_prompt with XML format."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        instruction = "You are a helpful assistant."
+        result = registry.inject_skills_prompt(instruction, format="xml")
+
+        assert "You are a helpful assistant." in result
+        assert "<available_skills>" in result
+        assert "<name>my-skill</name>" in result
+
+    def test_inject_skills_prompt_text_format(self, tmp_path):
+        """Test inject_skills_prompt with text format."""
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        instruction = "You are a helpful assistant."
+        result = registry.inject_skills_prompt(instruction, format="text")
+
+        assert "You are a helpful assistant." in result
+        assert "Available Skills:" in result
+        assert "- my-skill: A test skill" in result
+
 
 class TestSkillsRegistryValidation:
     """Tests for validation utilities."""

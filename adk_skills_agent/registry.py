@@ -363,6 +363,38 @@ class SkillsRegistry:
         else:
             raise ValueError(f"Unsupported format: {format}. Use 'xml' or 'text'.")
 
+    def inject_skills_prompt(self, instruction: str, format: str = "xml") -> str:
+        """Inject skills listing into an instruction/system prompt.
+
+        This method appends the skills listing to the provided instruction string,
+        using the skills already discovered in this registry instance. This is more
+        efficient than the standalone helper when you already have a registry.
+
+        Args:
+            instruction: Base instruction/system prompt
+            format: Output format - "xml" or "text" (default: "xml")
+
+        Returns:
+            Instruction with skills listing appended, or unchanged if no skills
+
+        Example:
+            >>> registry = SkillsRegistry()
+            >>> registry.discover(["./skills"])
+            >>> instruction = "You are a helpful assistant."
+            >>> full_instruction = registry.inject_skills_prompt(instruction, format="xml")
+            >>> print(full_instruction)
+            You are a helpful assistant.
+
+            <available_skills>
+            ...
+            </available_skills>
+        """
+        if len(self) == 0:
+            return instruction
+
+        skills_prompt = self.get_skills_prompt(format=format)
+        return f"{instruction}\n\n{skills_prompt}"
+
     # Validation utilities
 
     def validate_all(self, strict: bool = True) -> dict[str, ValidationResult]:

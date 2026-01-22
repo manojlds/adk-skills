@@ -218,3 +218,48 @@ Instructions.
         result = inject_skills_prompt(instruction, [tmp_path], format="xml", config=config)
 
         assert "<available_skills>" in result
+
+    def test_inject_skills_prompt_with_registry(self, tmp_path):
+        """Test inject_skills_prompt with existing registry (efficient pattern)."""
+        from adk_skills_agent.registry import SkillsRegistry
+
+        skill_dir = tmp_path / "my-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            """---
+name: my-skill
+description: A test skill
+---
+
+Instructions.
+"""
+        )
+
+        # Create and populate registry
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+
+        # Use registry instead of directories
+        instruction = "You are helpful."
+        result = inject_skills_prompt(instruction, registry=registry, format="xml")
+
+        assert "You are helpful." in result
+        assert "<available_skills>" in result
+        assert "<name>my-skill</name>" in result
+
+    def test_inject_skills_prompt_error_both_params(self, tmp_path):
+        """Test inject_skills_prompt raises error when both params provided."""
+        from adk_skills_agent.registry import SkillsRegistry
+
+        registry = SkillsRegistry()
+        instruction = "You are helpful."
+
+        with pytest.raises(ValueError, match="Cannot specify both 'directories' and 'registry'"):
+            inject_skills_prompt(instruction, directories=[tmp_path], registry=registry)
+
+    def test_inject_skills_prompt_error_no_params(self):
+        """Test inject_skills_prompt raises error when neither param provided."""
+        instruction = "You are helpful."
+
+        with pytest.raises(ValueError, match="Must specify either 'directories' or 'registry'"):
+            inject_skills_prompt(instruction)
