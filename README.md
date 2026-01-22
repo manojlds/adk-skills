@@ -15,7 +15,7 @@
 **From PyPI**:
 
 ```bash
-pip install adk-skills-agent
+uv pip install adk-skills-agent
 ```
 
 **Development Version**:
@@ -23,7 +23,7 @@ pip install adk-skills-agent
 ```bash
 git clone https://github.com/manojlds/adk-skills.git
 cd adk-skills
-pip install -e .
+uv sync
 ```
 
 ### Basic Usage
@@ -203,7 +203,7 @@ agent = Agent(
 Persist skills in a database using the optional SQLAlchemy support. Install the extra:
 
 ```bash
-pip install adk-skills-agent[db]
+uv pip install adk-skills-agent[db]
 ```
 
 Then provide a SQLAlchemy session to `SkillsRegistry`:
@@ -476,10 +476,9 @@ We welcome contributions! This project is in active development. See our [IMPLEM
 ```bash
 git clone https://github.com/manojlds/adk-skills.git
 cd adk-skills
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
-pip install -e ".[dev]"
-pytest  # Run tests (129 tests, 90%+ coverage)
+uv sync --all-extras  # Creates venv and installs all dependencies
+source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
+uv run pytest  # Run tests (129 tests, 90%+ coverage)
 ```
 
 ## 🔗 Related Projects

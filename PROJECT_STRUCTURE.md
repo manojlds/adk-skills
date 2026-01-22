@@ -379,36 +379,35 @@ nav:
 git clone https://github.com/yourusername/adk-skills.git
 cd adk-skills
 
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # or `venv\Scripts\activate` on Windows
+# Install dependencies (creates .venv automatically)
+uv sync --all-extras
 
-# Install in development mode
-pip install -e ".[dev]"
+# Activate virtual environment
+source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
 ```
 
 ### Testing
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run with coverage
-pytest --cov=adk_skills --cov-report=html
+uv run pytest --cov=adk_skills --cov-report=html
 
 # Run specific test
-pytest tests/core/test_parser.py
+uv run pytest tests/core/test_parser.py
 ```
 
 ### Linting & Formatting
 ```bash
-# Format code
-black adk_skills tests examples
-
 # Lint code
-ruff check adk_skills tests
+uv run ruff check adk_skills tests
+
+# Format code
+uv run ruff format adk_skills tests
 
 # Type check
-mypy adk_skills
+uv run mypy adk_skills
 ```
 
 ### Documentation

@@ -76,7 +76,7 @@ For testing or manual releases:
 1. **Run the workflow manually** with `testpypi` environment
 2. **Install from Test PyPI** to verify:
    ```bash
-   pip install --index-url https://test.pypi.org/simple/ adk-skills-agent
+   uv pip install --index-url https://test.pypi.org/simple/ adk-skills-agent
    ```
 
 3. **Test the installation** to ensure everything works
@@ -85,15 +85,14 @@ For testing or manual releases:
 
 ```bash
 # Build the package locally
-python -m pip install build
-python -m build
+uv build
 
 # Check the built files
 ls dist/
 # Should see: adk_skills_agent-0.1.0.tar.gz and adk_skills_agent-0.1.0-py3-none-any.whl
 
 # Install locally to test
-pip install dist/adk_skills_agent-0.1.0-py3-none-any.whl
+uv pip install dist/adk_skills_agent-0.1.0-py3-none-any.whl
 ```
 
 ## Version Management
@@ -169,10 +168,10 @@ The `publish.yml` workflow:
 - [ ] Set up Test PyPI trusted publishing for testing
 - [ ] Create GitHub environments: `pypi` and `testpypi`
 - [ ] Update version to `0.1.0` (or desired version)
-- [ ] Test build locally: `python -m build`
+- [ ] Test build locally: `uv build`
 - [ ] Test publish to Test PyPI
 - [ ] Test install from Test PyPI
 - [ ] Create GitHub release with tag `v0.1.0`
 - [ ] Verify automatic publish to PyPI
-- [ ] Test install from PyPI: `pip install adk-skills-agent`
+- [ ] Test install from PyPI: `uv pip install adk-skills-agent`
 - [ ] Update README if needed
