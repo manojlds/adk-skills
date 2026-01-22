@@ -132,32 +132,38 @@ def create_skills_agent(
 
 def inject_skills_prompt(
     instruction: str,
-    directories: Sequence[Union[str, Path]],
+    directories: Optional[Sequence[Union[str, Path]]] = None,
     format: str = "xml",
     config: Optional[SkillsConfig] = None,
+    registry: Optional[SkillsRegistry] = None,
 ) -> str:
     """Inject skills listing into an instruction/system prompt.
 
-    This helper discovers skills and appends them to an instruction string.
-    Useful when you want to include skills in the system prompt rather than
-    using the tool-based approach.
+    This helper supports two usage patterns:
+    1. Directory-based: Pass directories to discover skills (creates temporary registry)
+    2. Registry-based: Pass an existing SkillsRegistry instance (more efficient)
 
     Args:
         instruction: Base instruction/system prompt
-        directories: Directories to discover skills from
+        directories: Directories to discover skills from (optional, mutually exclusive with registry)
         format: Output format - "xml" or "text" (default: "xml")
-        config: Optional SkillsConfig for customization
+        config: Optional SkillsConfig for customization (only used with directories)
+        registry: Optional existing SkillsRegistry instance (mutually exclusive with directories)
 
     Returns:
         Instruction with skills listing appended
 
+    Raises:
+        ValueError: If both directories and registry are provided, or neither is provided
+
     Example:
         >>> from adk_skills_agent import inject_skills_prompt
         >>>
+        >>> # Pattern 1: Directory-based (discovers skills)
         >>> instruction = "You are a helpful assistant."
         >>> full_instruction = inject_skills_prompt(
         ...     instruction,
-        ...     ["./skills"],
+        ...     directories=["./skills"],
         ...     format="xml",
         ... )
         >>> print(full_instruction)
@@ -166,12 +172,29 @@ def inject_skills_prompt(
         <available_skills>
         ...
         </available_skills>
+        >>>
+        >>> # Pattern 2: Registry-based (reuses existing registry)
+        >>> from adk_skills_agent import SkillsRegistry
+        >>> registry = SkillsRegistry()
+        >>> registry.discover(["./skills"])
+        >>> full_instruction = inject_skills_prompt(
+        ...     instruction,
+        ...     registry=registry,
+        ...     format="xml",
+        ... )
     """
-    registry = SkillsRegistry(config=config or SkillsConfig())
-    registry.discover(directories)
+    # Validate arguments
+    if directories is not None and registry is not None:
+        raise ValueError("Cannot specify both 'directories' and 'registry'. Choose one.")
 
-    if len(registry) == 0:
-        return instruction
+    if directories is None and registry is None:
+        raise ValueError("Must specify either 'directories' or 'registry'.")
 
-    skills_prompt = registry.get_skills_prompt(format=format)
-    return f"{instruction}\n\n{skills_prompt}"
+    # Use provided registry or create temporary one
+    if registry is not None:
+        return registry.inject_skills_prompt(instruction, format=format)
+
+    # Directory-based: create temporary registry
+    temp_registry = SkillsRegistry(config=config or SkillsConfig())
+    temp_registry.discover(directories)
+    return temp_registry.inject_skills_prompt(instruction, format=format)
