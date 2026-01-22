@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Optional, cast
 
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
