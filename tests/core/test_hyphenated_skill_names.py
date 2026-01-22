@@ -4,8 +4,6 @@ This module tests that skills with hyphenated names are properly supported
 throughout the system, including validation, discovery, and loading.
 """
 
-import pytest
-
 from adk_skills_agent.core.discovery import discover_skills
 from adk_skills_agent.core.models import SkillsConfig
 from adk_skills_agent.core.validator import validate_skill_name
