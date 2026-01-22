@@ -1,21 +1,30 @@
 review:
-  defaultModel: opencode/glm-4.7-free
+  default:
+    model: opencode/glm-4.7-free
+
+  mode: unified
 
   agents:
     - security
     - quality
     - style
     - performance
+    - documentation
 
-  ignorePatterns:
-    - "*.md"
-    - "**/__pycache__/**"
-    - "**/tests/**"
-    - "**/__tests__/**"
-    - "**/__mocks__/**"
-    - "*.lock"
-    - "poetry.lock"
-    - "uv.lock"
-    - "package-lock.json"
-    - "yarn.lock"
-    - "pnpm-lock.yaml"
+  unified:
+    severityThreshold: HIGH
+
+  describe:
+    enabled: true
+    postDescription: true
+
+describe:
+  model: opencode/glm-4.7-free
+  includeProjectContext: true
+
+contextCompression:
+  enabled: true
+  maxTokens: 32000
+  softBufferTokens: 1500
+  hardBufferTokens: 1000
+  tokenEstimateDivisor: 4
