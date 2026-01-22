@@ -70,7 +70,7 @@ class SkillsStore:
             stmt = stmt.where(SkillRecord.version == version)
         else:
             stmt = stmt.order_by(SkillRecord.version.desc())
-        return cast(Optional[SkillRecord], self._session.execute(stmt).scalars().first())
+        return self._session.execute(stmt).scalars().first()
 
     def _record_to_metadata(self, record: SkillRecord) -> SkillMetadata:
         location = Path(record.location) if record.location else Path(f"/__db__/{record.name}")

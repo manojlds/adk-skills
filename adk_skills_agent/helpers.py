@@ -195,6 +195,8 @@ def inject_skills_prompt(
         return registry.inject_skills_prompt(instruction, format=format)
 
     # Directory-based: create temporary registry
+    # At this point, directories must be not None (validated above)
+    assert directories is not None  # Type narrowing for mypy
     temp_registry = SkillsRegistry(config=config or SkillsConfig())
     temp_registry.discover(directories)
     return temp_registry.inject_skills_prompt(instruction, format=format)
