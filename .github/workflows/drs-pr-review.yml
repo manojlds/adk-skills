@@ -52,14 +52,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch base branch for git diff
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install DRS CLI
-        run: npm install -g opencode-ai @diff-review-system/drs
+      - name: Install OpenCode CLI
+        run: npm install -g opencode-ai
+
+      - name: Install DRS
+        run: npm install -g @diff-review-system/drs
 
       - name: Setup OpenCode Zen Authentication
         if: env.OPENCODE_ZEN_API_KEY != ''
@@ -93,7 +101,8 @@ jobs:
             --owner ${{ github.event.repository.owner.login }} \
             --repo ${{ github.event.repository.name }} \
             --pr ${{ github.event.pull_request.number }} \
-            --post-comments
+            --post-comments \
+            --debug
 
   review-external:
     runs-on: ubuntu-latest
@@ -111,14 +120,22 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Fetch base branch for git diff
+        run: |
+          git fetch origin ${{ github.event.pull_request.base.ref }}:refs/remotes/origin/${{ github.event.pull_request.base.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      - name: Install DRS CLI
-        run: npm install -g opencode-ai @diff-review-system/drs
+      - name: Install OpenCode CLI
+        run: npm install -g opencode-ai
+
+      - name: Install DRS
+        run: npm install -g @diff-review-system/drs
 
       - name: Setup OpenCode Zen Authentication
         if: env.OPENCODE_ZEN_API_KEY != ''
@@ -152,7 +169,8 @@ jobs:
             --owner ${{ github.event.repository.owner.login }} \
             --repo ${{ github.event.repository.name }} \
             --pr ${{ github.event.pull_request.number }} \
-            --post-comments
+            --post-comments \
+            --debug
 
   notify-external:
     runs-on: ubuntu-latest

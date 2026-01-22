@@ -14,6 +14,22 @@ review:
   unified:
     severityThreshold: HIGH
 
+  ignorePatterns:
+    - "test_*.py"
+    - "*_test.py"
+    - "**/__pycache__/**"
+    - "**/.pytest_cache/**"
+    - "**/tests/**"
+    - "**/__tests__/**"
+    - "**/mocks/**"
+    - "**/__mocks__/**"
+    - "poetry.lock"
+    - "Pipfile.lock"
+    - "requirements*.txt"
+    - "**/*.egg-info/**"
+    - "**/dist/**"
+    - "**/build/**"
+
   describe:
     enabled: true
     postDescription: true
