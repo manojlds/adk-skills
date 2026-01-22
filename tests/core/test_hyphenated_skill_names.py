@@ -426,7 +426,7 @@ Instructions.
             "a-bcdefg",  # Early
             "abcd-efg",  # Middle
             "abcdef-g",  # Late
-            "a-b-c-d",   # Multiple
+            "a-b-c-d",  # Multiple
         ]
 
         for name in positions:
