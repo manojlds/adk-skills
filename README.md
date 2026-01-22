@@ -185,11 +185,16 @@ xml_prompt = registry.to_prompt_xml()
 text_prompt = registry.to_prompt_text()
 # Returns: Available Skills: - skill-name: description
 
+# Or inject directly into an instruction (recommended)
+base_instruction = "You are helpful."
+full_instruction = registry.inject_skills_prompt(base_instruction, format="xml")
+# Returns: "You are helpful.\n\n<available_skills>...</available_skills>"
+
 # Use with agent
 agent = Agent(
     name="assistant",
     model="gemini-2.5-flash",
-    instruction=f"You are helpful.\n\n{xml_prompt}",
+    instruction=full_instruction,
 )
 ```
 
@@ -327,17 +332,30 @@ agent = create_skills_agent(
 
 #### inject_skills_prompt()
 
-Inject skills into an instruction string:
+Inject skills into an instruction string. Supports two patterns:
 
 ```python
-from adk_skills_agent import inject_skills_prompt
+from adk_skills_agent import inject_skills_prompt, SkillsRegistry
 
+# Pattern 1: Directory-based (discovers skills)
 instruction = "You are a helpful assistant."
 full_instruction = inject_skills_prompt(
     instruction,
-    ["./skills"],
+    directories=["./skills"],
     format="xml"  # or "text"
 )
+
+# Pattern 2: Registry-based (more efficient, reuses existing registry)
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+full_instruction = inject_skills_prompt(
+    instruction,
+    registry=registry,
+    format="xml"
+)
+
+# Or use the registry method directly
+full_instruction = registry.inject_skills_prompt(instruction, format="xml")
 ```
 
 ### Integration Patterns

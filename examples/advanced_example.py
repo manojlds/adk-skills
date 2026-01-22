@@ -51,6 +51,16 @@ def demo_prompt_injection() -> None:
     print(f"Length: {len(prompt)} characters")
     print()
 
+    # Using inject_skills_prompt method
+    print("Using inject_skills_prompt() method:")
+    print("-" * 60)
+    base_instruction = "You are a helpful assistant."
+    full_instruction = registry.inject_skills_prompt(base_instruction, format="xml")
+    print(f"Base instruction: {base_instruction}")
+    print(f"Full instruction length: {len(full_instruction)} characters")
+    print(f"Skills injected: {'<available_skills>' in full_instruction}")
+    print()
+
 
 def demo_validation() -> None:
     """Demonstrate skills validation features."""
@@ -137,14 +147,39 @@ def demo_helper_functions() -> None:
 
     skills_dir = Path(__file__).parent / "skills"
 
-    # inject_skills_prompt helper
-    print("Using inject_skills_prompt():")
+    # inject_skills_prompt helper - Pattern 1: Directory-based
+    print("Using inject_skills_prompt() - Pattern 1 (directory-based):")
     print("-" * 60)
     base_instruction = "You are a helpful assistant."
     full_instruction = inject_skills_prompt(
-        base_instruction, [skills_dir], format="text"
+        base_instruction, directories=[skills_dir], format="text"
     )
     print(full_instruction)
+    print()
+
+    # inject_skills_prompt helper - Pattern 2: Registry-based (more efficient)
+    print("Using inject_skills_prompt() - Pattern 2 (registry-based):")
+    print("-" * 60)
+    registry = SkillsRegistry()
+    registry.discover([skills_dir])
+
+    # Via helper function
+    full_instruction_helper = inject_skills_prompt(
+        base_instruction, registry=registry, format="text"
+    )
+
+    # Or via registry method (more direct)
+    full_instruction_method = registry.inject_skills_prompt(
+        base_instruction, format="text"
+    )
+
+    print("Both patterns produce identical results:")
+    print(f"  Helper function: {len(full_instruction_helper)} chars")
+    print(f"  Registry method: {len(full_instruction_method)} chars")
+    print(f"  Identical: {full_instruction_helper == full_instruction_method}")
+    print()
+    print("Note: Registry-based pattern is more efficient when you already")
+    print("      have a registry, avoiding re-discovery of skills.")
     print()
 
     # with_skills helper (requires a mock agent for demo)
@@ -240,9 +275,10 @@ def main() -> None:
         print()
         print("New features available:")
         print("  • Prompt injection utilities (to_prompt_xml, to_prompt_text)")
+        print("  • Registry.inject_skills_prompt() method for efficient prompt injection")
         print("  • Validation methods (validate_all, validate_skill_by_name)")
         print("  • SkillsAgent class for easy agent creation")
-        print("  • Helper functions (with_skills, create_skills_agent)")
+        print("  • Helper functions (with_skills, create_skills_agent, inject_skills_prompt)")
         print()
 
     except Exception as e:
