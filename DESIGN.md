@@ -200,6 +200,53 @@ Use this when a task matches an available skill's description.
 </available_skills>
 ```
 
+## Design Plan: File References Support (references/)
+
+The Agent Skills specification calls out **file references** as relative paths
+from the skill root. In practice (and in OpenSkills examples), the SKILL.md
+content references files in `references/`, while the “read” workflow returns the
+skill’s base directory so agents can resolve those paths on-demand. Our
+implementation already exposes `references_dir` and a `read_reference` tool, so
+the plan focuses on making that workflow explicit and well-documented rather
+than parsing SKILL.md to extract references automatically.
+
+### OpenSkills Behavior (What to Mirror)
+- `read <skill>` returns the SKILL.md instructions plus a **base directory**.
+- Skill authors reference bundled resources via relative paths (e.g.,
+  `references/skill-format.md`).
+- Agents resolve those paths manually using the base directory, and load content
+  only when needed (no auto-loading of reference files).
+
+### Goals
+- Keep reference discovery **manual and on-demand** (no SKILL.md parsing).
+- Encourage authors to store long-form content in `references/`.
+- Make the `read_reference` tool the canonical way to load reference files.
+- Provide clear guidance and examples in documentation and tests.
+
+### Proposed Changes
+1. **Documentation**
+   - Update README to include a “File References” section:
+     - Explain that SKILL.md should reference `references/` with relative paths.
+     - Show how to call `read_reference(skill, reference)` to load content.
+     - Emphasize that the `base_directory` returned by `use_skill` can be used to
+       resolve paths if needed.
+
+2. **Tool contract clarity**
+   - Ensure the `use_skill` output description explicitly calls out the
+     `base_directory` for resolving bundled resources (references/scripts/assets).
+   - Keep `read_reference` as the single mechanism to fetch reference content.
+
+3. **Tests**
+   - Add or expand tests to cover:
+     - Reading a reference from a nested reference path (supported by the tool).
+     - Error messaging for missing references includes available files.
+     - Documentation examples align with actual tool behavior.
+
+### Implementation Notes
+- No SKILL.md parsing changes are required.
+- Keep validation limited to path safety and directory boundaries in the
+  `read_reference` tool.
+
 **Parameters**:
 ```python
 {
