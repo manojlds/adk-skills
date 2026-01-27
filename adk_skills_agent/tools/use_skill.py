@@ -83,7 +83,7 @@ def create_use_skill_tool(
             Dict containing:
             - skill_name: Name of the activated skill
             - instructions: Full markdown instructions from SKILL.md
-            - base_directory: Path to the skill directory
+            - base_directory: Path to the skill directory (resolve references/, scripts/, assets/)
             - has_scripts: Whether the skill has a scripts/ directory
             - has_references: Whether the skill has a references/ directory
             - has_assets: Whether the skill has an assets/ directory

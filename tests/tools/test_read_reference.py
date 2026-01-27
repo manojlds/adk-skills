@@ -72,14 +72,16 @@ class TestCreateReadReferenceTool:
         (skill_dir / "SKILL.md").write_text(
             "---\nname: test-skill\ndescription: A test skill\n---\n\n# Test"
         )
-        (skill_dir / "references").mkdir()
+        refs_dir = skill_dir / "references"
+        refs_dir.mkdir()
+        (refs_dir / "guide.md").write_text("Guide content")
 
         registry = SkillsRegistry()
         registry.discover([tmp_path])
 
         tool = create_read_reference_tool(registry)
 
-        with pytest.raises(SkillExecutionError, match="not found"):
+        with pytest.raises(SkillExecutionError, match="guide.md"):
             tool("test-skill", "nonexistent.md")
 
     def test_read_reference_path_traversal_prevention(self, tmp_path):
@@ -104,6 +106,29 @@ class TestCreateReadReferenceTool:
         # Try to access file outside references directory
         with pytest.raises(SkillExecutionError, match="escapes skill directory"):
             tool("test-skill", "../../secret.txt")
+
+    def test_read_reference_nested_path(self, tmp_path):
+        """Test reading a reference file from a nested path."""
+        skill_dir = tmp_path / "test-skill"
+        skill_dir.mkdir()
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: test-skill\ndescription: A test skill\n---\n\n# Test"
+        )
+
+        refs_dir = skill_dir / "references"
+        nested_dir = refs_dir / "guides"
+        nested_dir.mkdir(parents=True)
+        nested_file = nested_dir / "intro.md"
+        nested_file.write_text("Nested guide content")
+
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+
+        tool = create_read_reference_tool(registry)
+        result = tool("test-skill", "guides/intro.md")
+
+        assert result["content"] == "Nested guide content"
+        assert result["filename"] == "intro.md"
 
     def test_read_reference_from_registry_method(self, tmp_path):
         """Test creating tool via registry method."""

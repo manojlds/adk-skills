@@ -100,6 +100,32 @@ Use this skill to extract structured data from websites.
 - Cache responses
 ```
 
+### File References (references/)
+
+Use `references/` for long-form documentation and link to it from SKILL.md using
+relative paths:
+
+```markdown
+See `references/api-docs.md` for the full API guide.
+```
+
+When a skill is activated, the `use_skill` tool returns a `base_directory`. Use
+that path (or call `read_reference`) to load reference files on-demand:
+
+```python
+from adk_skills_agent import SkillsRegistry
+
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+
+use_skill = registry.create_use_skill_tool()
+read_reference = registry.create_read_reference_tool()
+
+skill = use_skill("web-scraper")
+ref = read_reference("web-scraper", "api-docs.md")
+print(ref["content"])
+```
+
 ## 🎓 Examples
 
 ### Discover Skills

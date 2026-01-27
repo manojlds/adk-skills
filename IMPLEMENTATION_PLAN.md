@@ -365,6 +365,34 @@ def create_run_script_tool(registry: SkillsRegistry) -> Callable:
 
 ---
 
+## Phase 2.9: Reference Usage UX (Week 5)
+
+### Milestone: Clear, spec-aligned references workflow (no parsing)
+
+#### 2.9.1 Documentation updates
+**Files**: `README.md`, `DESIGN.md`
+
+- [ ] Add a “File References” section to README with example usage
+- [ ] Explain `base_directory` usage for resolving `references/`
+- [ ] Document that references are loaded on-demand via `read_reference`
+
+#### 2.9.2 Tool contract clarity
+**Files**: `adk_skills_agent/tools/use_skill.py`
+
+- [ ] Expand tool docs to highlight `base_directory` for bundled resources
+- [ ] Keep `read_reference` as the only content-fetch path
+
+#### 2.9.3 Tests for reference usage
+**Files**: `tests/tools/test_read_reference.py`
+
+- [ ] Add test for nested reference paths (`references/guides/intro.md`)
+- [ ] Assert missing reference errors list available files
+- [ ] Ensure documentation examples match tool behavior
+
+**Deliverable**: References workflow documented and validated
+
+---
+
 ## Phase 3: Advanced Features & Polish (Week 5-6)
 
 ### Milestone: Production-ready library
