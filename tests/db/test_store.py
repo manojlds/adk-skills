@@ -519,6 +519,55 @@ def test_registry_len_no_double_count(sqlite_session: Session) -> None:
     assert len(registry) == 1
 
 
+def test_registry_import_skill_to_db(sqlite_session: Session, tmp_path: Path) -> None:
+    """Ensure import_skill_to_db imports a single file-based skill."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    # Create test skill file
+    skill_dir = tmp_path / "my-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        """---
+name: my-skill
+description: A test skill
+license: MIT
+---
+Instructions for my skill.
+"""
+    )
+
+    config = SkillsConfig(db_enabled=True, db_session=sqlite_session)
+    registry = SkillsRegistry(config=config)
+    registry.discover([tmp_path])
+
+    # Import single skill
+    registry.import_skill_to_db("my-skill")
+
+    # Verify it's in DB
+    assert registry.skill_exists_in_db("my-skill")
+
+    # Verify content
+    skill = registry.load_skill("my-skill")
+    assert skill.description == "A test skill"
+    assert skill.license == "MIT"
+    assert "Instructions for my skill" in skill.instructions
+
+
+def test_registry_import_skill_to_db_not_found(sqlite_session: Session) -> None:
+    """Ensure import_skill_to_db raises error for non-existent skill."""
+    from adk_skills_agent.exceptions import SkillNotFoundError
+
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    config = SkillsConfig(db_enabled=True, db_session=sqlite_session)
+    registry = SkillsRegistry(config=config)
+
+    with pytest.raises(SkillNotFoundError):
+        registry.import_skill_to_db("nonexistent-skill")
+
+
 def test_registry_import_all_to_db(sqlite_session: Session, tmp_path: Path) -> None:
     """Ensure import_all_to_db imports all file-based skills."""
     store = SkillsStore(sqlite_session)
@@ -657,3 +706,39 @@ Updated instructions.
     # Latest version should have updated content
     skill_one = registry.load_skill("skill-one")
     assert skill_one.description == "Updated from file"
+
+
+# Error handling tests
+
+
+def test_registry_db_operations_require_db_enabled() -> None:
+    """Ensure DB operations raise RuntimeError when DB is not enabled."""
+    from adk_skills_agent.core.models import Skill
+
+    registry = SkillsRegistry()  # DB not enabled
+
+    skill = Skill(
+        name="test",
+        description="test",
+        location=Path("/test"),
+        skill_dir=Path("/test"),
+        instructions="test",
+    )
+
+    with pytest.raises(RuntimeError, match="Database not enabled"):
+        registry.save_skill_to_db(skill)
+
+    with pytest.raises(RuntimeError, match="Database not enabled"):
+        registry.delete_skill_from_db("test")
+
+    with pytest.raises(RuntimeError, match="Database not enabled"):
+        registry.import_skill_to_db("test")
+
+    with pytest.raises(RuntimeError, match="Database not enabled"):
+        registry.import_all_to_db()
+
+    with pytest.raises(RuntimeError, match="Database not enabled"):
+        registry.list_skill_versions("test")
+
+    with pytest.raises(RuntimeError, match="Database not enabled"):
+        registry.skill_exists_in_db("test")
