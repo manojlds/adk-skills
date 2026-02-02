@@ -550,6 +550,47 @@ class SkillsRegistry:
         self._db_store.import_skill(skill, app_name=self.config.app_name)
         self._refresh_db_metadata()
 
+    def import_all_to_db(self, skip_existing: bool = True) -> int:
+        """Import all file-based skills into the database.
+
+        Bulk imports all skills from the file registry to the database.
+        Useful for migrating from file-based to database-backed storage.
+
+        Args:
+            skip_existing: If True (default), skips skills that already exist
+                          in the database. If False, creates new versions.
+
+        Returns:
+            Number of skills imported
+
+        Raises:
+            RuntimeError: If database is not enabled
+
+        Example:
+            >>> registry = SkillsRegistry(config=SkillsConfig(
+            ...     db_enabled=True, db_session=session
+            ... ))
+            >>> registry.discover(["./skills"])
+            >>> count = registry.import_all_to_db()
+            >>> print(f"Imported {count} skills to database")
+        """
+        if self._db_store is None:
+            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
+
+        imported = 0
+        for name, metadata in self._metadata_registry.items():
+            if skip_existing and self._db_store.skill_exists(
+                name, app_name=self.config.app_name
+            ):
+                continue
+
+            skill = parse_full(metadata.location)
+            self._db_store.import_skill(skill, app_name=self.config.app_name)
+            imported += 1
+
+        self._refresh_db_metadata()
+        return imported
+
     def list_skill_versions(self, name: str) -> list[int]:
         """List all versions of a skill in the database.
 

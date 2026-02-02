@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
@@ -516,3 +517,143 @@ def test_registry_len_no_double_count(sqlite_session: Session) -> None:
 
     # Should count as 1, not 2
     assert len(registry) == 1
+
+
+def test_registry_import_all_to_db(sqlite_session: Session, tmp_path: Path) -> None:
+    """Ensure import_all_to_db imports all file-based skills."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    # Create test skill files
+    skill1_dir = tmp_path / "skill-one"
+    skill1_dir.mkdir()
+    (skill1_dir / "SKILL.md").write_text(
+        """---
+name: skill-one
+description: First skill
+---
+Instructions for skill one.
+"""
+    )
+
+    skill2_dir = tmp_path / "skill-two"
+    skill2_dir.mkdir()
+    (skill2_dir / "SKILL.md").write_text(
+        """---
+name: skill-two
+description: Second skill
+---
+Instructions for skill two.
+"""
+    )
+
+    config = SkillsConfig(db_enabled=True, db_session=sqlite_session)
+    registry = SkillsRegistry(config=config)
+    registry.discover([tmp_path])
+
+    # Import all to DB
+    count = registry.import_all_to_db()
+    assert count == 2
+
+    # Verify both are in DB
+    assert registry.skill_exists_in_db("skill-one")
+    assert registry.skill_exists_in_db("skill-two")
+
+
+def test_registry_import_all_to_db_skip_existing(sqlite_session: Session, tmp_path: Path) -> None:
+    """Ensure import_all_to_db skips existing skills by default."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    # Pre-add one skill to DB
+    sqlite_session.add(
+        SkillRecord(
+            name="skill-one",
+            app_name=None,
+            version=1,
+            description="already in db",
+            instructions="db instructions",
+        )
+    )
+    sqlite_session.commit()
+
+    # Create test skill files
+    skill1_dir = tmp_path / "skill-one"
+    skill1_dir.mkdir()
+    (skill1_dir / "SKILL.md").write_text(
+        """---
+name: skill-one
+description: First skill from file
+---
+File instructions for skill one.
+"""
+    )
+
+    skill2_dir = tmp_path / "skill-two"
+    skill2_dir.mkdir()
+    (skill2_dir / "SKILL.md").write_text(
+        """---
+name: skill-two
+description: Second skill
+---
+Instructions for skill two.
+"""
+    )
+
+    config = SkillsConfig(db_enabled=True, db_session=sqlite_session)
+    registry = SkillsRegistry(config=config)
+    registry.discover([tmp_path])
+
+    # Import all - should skip skill-one
+    count = registry.import_all_to_db(skip_existing=True)
+    assert count == 1
+
+    # skill-one should still have original DB content
+    skill_one = registry.load_skill("skill-one")
+    assert skill_one.description == "already in db"
+
+
+def test_registry_import_all_to_db_no_skip(sqlite_session: Session, tmp_path: Path) -> None:
+    """Ensure import_all_to_db creates new versions when skip_existing=False."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    # Pre-add one skill to DB
+    sqlite_session.add(
+        SkillRecord(
+            name="skill-one",
+            app_name=None,
+            version=1,
+            description="v1 in db",
+            instructions="v1 instructions",
+        )
+    )
+    sqlite_session.commit()
+
+    # Create test skill file
+    skill1_dir = tmp_path / "skill-one"
+    skill1_dir.mkdir()
+    (skill1_dir / "SKILL.md").write_text(
+        """---
+name: skill-one
+description: Updated from file
+---
+Updated instructions.
+"""
+    )
+
+    config = SkillsConfig(db_enabled=True, db_session=sqlite_session)
+    registry = SkillsRegistry(config=config)
+    registry.discover([tmp_path])
+
+    # Import all with skip_existing=False
+    count = registry.import_all_to_db(skip_existing=False)
+    assert count == 1
+
+    # Should now have 2 versions
+    versions = registry.list_skill_versions("skill-one")
+    assert versions == [1, 2]
+
+    # Latest version should have updated content
+    skill_one = registry.load_skill("skill-one")
+    assert skill_one.description == "Updated from file"
