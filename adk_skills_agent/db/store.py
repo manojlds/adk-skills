@@ -7,10 +7,14 @@ from pathlib import Path
 from typing import Any, cast
 
 from sqlalchemy import CursorResult, Select, delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from adk_skills_agent.core.models import Skill, SkillMetadata
 from adk_skills_agent.db.models import Base, SkillRecord
+
+# Maximum retries for version conflicts due to race conditions
+_MAX_VERSION_RETRIES = 3
 
 
 class SkillsStore:
@@ -108,6 +112,8 @@ class SkillsStore:
         skill: Skill,
         app_name: str | None = None,
         version: int | None = None,
+        *,
+        _commit: bool = True,
     ) -> SkillRecord:
         """Save a skill to the database.
 
@@ -118,15 +124,47 @@ class SkillsStore:
             skill: The skill to save
             app_name: Optional app scope for the skill
             version: Optional specific version (auto-increments if None)
+            _commit: Internal flag to control commit behavior (for bulk operations)
 
         Returns:
             The saved SkillRecord
-        """
-        if version is None:
-            # Auto-increment version
-            latest = self._get_latest_version(skill.name, app_name)
-            version = latest + 1 if latest else 1
 
+        Note:
+            When auto-incrementing versions, this method handles race conditions
+            by retrying with a new version number if a concurrent insert occurs.
+        """
+        # If version is specified, use direct save (no race condition)
+        if version is not None:
+            return self._save_skill_with_version(skill, app_name, version, _commit)
+
+        # Auto-increment with retry logic to handle race conditions
+        for attempt in range(_MAX_VERSION_RETRIES):
+            latest = self._get_latest_version(skill.name, app_name)
+            next_version = (latest or 0) + 1
+
+            try:
+                return self._save_skill_with_version(
+                    skill, app_name, next_version, _commit
+                )
+            except IntegrityError:
+                # Version conflict - another process inserted the same version
+                self._session.rollback()
+                if attempt == _MAX_VERSION_RETRIES - 1:
+                    raise  # Re-raise on final attempt
+                # Retry with a new version number
+                continue
+
+        # Should not reach here, but satisfy type checker
+        raise RuntimeError("Failed to save skill after maximum retries")
+
+    def _save_skill_with_version(
+        self,
+        skill: Skill,
+        app_name: str | None,
+        version: int,
+        commit: bool,
+    ) -> SkillRecord:
+        """Save a skill with a specific version number."""
         # Check if this exact version exists
         existing = self._fetch_skill_record(skill.name, app_name, version)
         if existing is not None:
@@ -139,7 +177,8 @@ class SkillsStore:
             existing.compatibility = skill.compatibility
             existing.allowed_tools = skill.allowed_tools
             existing.metadata_json = skill.metadata or {}
-            self._session.commit()
+            if commit:
+                self._session.commit()
             return existing
 
         # Create new record
@@ -157,7 +196,8 @@ class SkillsStore:
             metadata_json=skill.metadata or {},
         )
         self._session.add(record)
-        self._session.commit()
+        if commit:
+            self._session.commit()
         return record
 
     def delete_skill(
@@ -251,6 +291,8 @@ class SkillsStore:
         self,
         skill: Skill,
         app_name: str | None = None,
+        *,
+        _commit: bool = True,
     ) -> SkillRecord:
         """Import a file-based skill into the database.
 
@@ -260,11 +302,48 @@ class SkillsStore:
         Args:
             skill: The skill to import (typically loaded from file)
             app_name: Optional app scope for the imported skill
+            _commit: Internal flag to control commit behavior (for bulk operations)
 
         Returns:
             The created SkillRecord
         """
-        return self.save_skill(skill, app_name=app_name)
+        return self.save_skill(skill, app_name=app_name, _commit=_commit)
+
+    def import_skills_bulk(
+        self,
+        skills: list[Skill],
+        app_name: str | None = None,
+        skip_existing: bool = True,
+    ) -> int:
+        """Import multiple skills in a single transaction.
+
+        This method ensures atomicity - either all skills are imported
+        or none are (on error, the transaction is rolled back).
+
+        Args:
+            skills: List of skills to import
+            app_name: Optional app scope for imported skills
+            skip_existing: If True, skips skills that already exist
+
+        Returns:
+            Number of skills imported
+
+        Raises:
+            Exception: Re-raises any exception after rolling back
+        """
+        imported = 0
+        try:
+            for skill in skills:
+                if skip_existing and self.skill_exists(skill.name, app_name=app_name):
+                    continue
+                self.import_skill(skill, app_name=app_name, _commit=False)
+                imported += 1
+
+            self._session.commit()
+            return imported
+        except Exception:
+            self._session.rollback()
+            raise
 
     def _get_latest_version(self, name: str, app_name: str | None) -> int | None:
         """Get the latest version number for a skill."""

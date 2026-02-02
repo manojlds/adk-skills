@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine
@@ -742,3 +743,78 @@ def test_registry_db_operations_require_db_enabled() -> None:
 
     with pytest.raises(RuntimeError, match="Database not enabled"):
         registry.skill_exists_in_db("test")
+
+
+def test_store_bulk_import_atomicity(sqlite_session: Session, tmp_path: Path) -> None:
+    """Ensure bulk import is atomic - all or nothing on error."""
+    from unittest.mock import patch
+
+    from adk_skills_agent.core.models import Skill
+
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    skills = [
+        Skill(
+            name="skill-one",
+            description="First",
+            location=Path("/test/one"),
+            skill_dir=Path("/test/one"),
+            instructions="one",
+        ),
+        Skill(
+            name="skill-two",
+            description="Second",
+            location=Path("/test/two"),
+            skill_dir=Path("/test/two"),
+            instructions="two",
+        ),
+    ]
+
+    # Simulate an error during the second skill import
+    original_import = store.import_skill
+    call_count = [0]
+
+    def failing_import(skill: Skill, app_name: str | None = None, *, _commit: bool = True) -> Any:
+        call_count[0] += 1
+        if call_count[0] == 2:
+            raise ValueError("Simulated error")
+        return original_import(skill, app_name, _commit=_commit)
+
+    with patch.object(store, "import_skill", failing_import):
+        with pytest.raises(ValueError, match="Simulated error"):
+            store.import_skills_bulk(skills, skip_existing=False)
+
+    # Neither skill should exist due to rollback
+    assert not store.skill_exists("skill-one")
+    assert not store.skill_exists("skill-two")
+
+
+def test_store_bulk_import_success(sqlite_session: Session) -> None:
+    """Ensure bulk import commits all skills together."""
+    from adk_skills_agent.core.models import Skill
+
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    skills = [
+        Skill(
+            name="bulk-one",
+            description="First",
+            location=Path("/test/one"),
+            skill_dir=Path("/test/one"),
+            instructions="one",
+        ),
+        Skill(
+            name="bulk-two",
+            description="Second",
+            location=Path("/test/two"),
+            skill_dir=Path("/test/two"),
+            instructions="two",
+        ),
+    ]
+
+    count = store.import_skills_bulk(skills, skip_existing=False)
+    assert count == 2
+    assert store.skill_exists("bulk-one")
+    assert store.skill_exists("bulk-two")

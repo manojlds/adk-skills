@@ -556,6 +556,9 @@ class SkillsRegistry:
         Bulk imports all skills from the file registry to the database.
         Useful for migrating from file-based to database-backed storage.
 
+        This operation is atomic - either all skills are imported successfully,
+        or none are (the transaction is rolled back on error).
+
         Args:
             skip_existing: If True (default), skips skills that already exist
                           in the database. If False, creates new versions.
@@ -565,6 +568,7 @@ class SkillsRegistry:
 
         Raises:
             RuntimeError: If database is not enabled
+            Exception: Re-raises any exception after rolling back transaction
 
         Example:
             >>> registry = SkillsRegistry(config=SkillsConfig(
@@ -577,16 +581,15 @@ class SkillsRegistry:
         if self._db_store is None:
             raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
 
-        imported = 0
-        for name, metadata in self._metadata_registry.items():
-            if skip_existing and self._db_store.skill_exists(
-                name, app_name=self.config.app_name
-            ):
-                continue
+        # Load all skills from files first
+        skills = [parse_full(metadata.location) for metadata in self._metadata_registry.values()]
 
-            skill = parse_full(metadata.location)
-            self._db_store.import_skill(skill, app_name=self.config.app_name)
-            imported += 1
+        # Use bulk import for atomicity
+        imported = self._db_store.import_skills_bulk(
+            skills,
+            app_name=self.config.app_name,
+            skip_existing=skip_existing,
+        )
 
         self._refresh_db_metadata()
         return imported
