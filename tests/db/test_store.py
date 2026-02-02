@@ -145,3 +145,374 @@ def test_registry_loads_skills_from_db(sqlite_session: Session) -> None:
 
     skill = registry.load_skill("epsilon")
     assert skill.instructions == "epsilon instructions"
+
+
+# CRUD operation tests
+
+
+def test_store_save_skill_creates_new(sqlite_session: Session) -> None:
+    """Ensure save_skill creates a new skill record."""
+    from pathlib import Path
+
+    from adk_skills_agent.core.models import Skill
+
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    skill = Skill(
+        name="test-skill",
+        description="A test skill",
+        location=Path("/test/SKILL.md"),
+        skill_dir=Path("/test"),
+        instructions="Test instructions",
+        license="MIT",
+    )
+
+    record = store.save_skill(skill)
+    assert record.name == "test-skill"
+    assert record.version == 1
+    assert record.description == "A test skill"
+    assert record.instructions == "Test instructions"
+
+
+def test_store_save_skill_auto_increments_version(sqlite_session: Session) -> None:
+    """Ensure save_skill auto-increments version when not specified."""
+    from pathlib import Path
+
+    from adk_skills_agent.core.models import Skill
+
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    skill = Skill(
+        name="versioned-skill",
+        description="Version 1",
+        location=Path("/test/SKILL.md"),
+        skill_dir=Path("/test"),
+        instructions="v1 instructions",
+    )
+
+    record1 = store.save_skill(skill)
+    assert record1.version == 1
+
+    skill.description = "Version 2"
+    skill.instructions = "v2 instructions"
+    record2 = store.save_skill(skill)
+    assert record2.version == 2
+
+    # Verify both versions exist
+    versions = store.list_versions("versioned-skill")
+    assert versions == [1, 2]
+
+
+def test_store_save_skill_updates_existing_version(sqlite_session: Session) -> None:
+    """Ensure save_skill updates an existing version when specified."""
+    from pathlib import Path
+
+    from adk_skills_agent.core.models import Skill
+
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    skill = Skill(
+        name="update-skill",
+        description="Original",
+        location=Path("/test/SKILL.md"),
+        skill_dir=Path("/test"),
+        instructions="original instructions",
+    )
+
+    store.save_skill(skill, version=1)
+
+    # Update the same version
+    skill.description = "Updated"
+    skill.instructions = "updated instructions"
+    store.save_skill(skill, version=1)
+
+    # Should still be version 1, but updated
+    retrieved = store.get_skill("update-skill")
+    assert retrieved.description == "Updated"
+    assert retrieved.instructions == "updated instructions"
+
+    # Only one version should exist
+    versions = store.list_versions("update-skill")
+    assert versions == [1]
+
+
+def test_store_delete_skill_single_version(sqlite_session: Session) -> None:
+    """Ensure delete_skill can delete a single version."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    sqlite_session.add_all(
+        [
+            SkillRecord(
+                name="delete-me",
+                app_name=None,
+                version=1,
+                description="v1",
+                instructions="v1 instructions",
+            ),
+            SkillRecord(
+                name="delete-me",
+                app_name=None,
+                version=2,
+                description="v2",
+                instructions="v2 instructions",
+            ),
+        ]
+    )
+    sqlite_session.commit()
+
+    count = store.delete_skill("delete-me", version=1)
+    assert count == 1
+
+    versions = store.list_versions("delete-me")
+    assert versions == [2]
+
+
+def test_store_delete_skill_all_versions(sqlite_session: Session) -> None:
+    """Ensure delete_skill deletes all versions when version not specified."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    sqlite_session.add_all(
+        [
+            SkillRecord(
+                name="delete-all",
+                app_name=None,
+                version=1,
+                description="v1",
+                instructions="v1",
+            ),
+            SkillRecord(
+                name="delete-all",
+                app_name=None,
+                version=2,
+                description="v2",
+                instructions="v2",
+            ),
+        ]
+    )
+    sqlite_session.commit()
+
+    count = store.delete_skill("delete-all")
+    assert count == 2
+    assert not store.skill_exists("delete-all")
+
+
+def test_store_skill_exists(sqlite_session: Session) -> None:
+    """Ensure skill_exists correctly detects skills."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    assert not store.skill_exists("nonexistent")
+
+    sqlite_session.add(
+        SkillRecord(
+            name="exists-test",
+            app_name=None,
+            version=1,
+            description="test",
+            instructions="test",
+        )
+    )
+    sqlite_session.commit()
+
+    assert store.skill_exists("exists-test")
+    assert store.skill_exists("exists-test", version=1)
+    assert not store.skill_exists("exists-test", version=2)
+
+
+def test_store_list_versions(sqlite_session: Session) -> None:
+    """Ensure list_versions returns all versions in order."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    sqlite_session.add_all(
+        [
+            SkillRecord(
+                name="multi-version",
+                app_name=None,
+                version=3,
+                description="v3",
+                instructions="v3",
+            ),
+            SkillRecord(
+                name="multi-version",
+                app_name=None,
+                version=1,
+                description="v1",
+                instructions="v1",
+            ),
+            SkillRecord(
+                name="multi-version",
+                app_name=None,
+                version=2,
+                description="v2",
+                instructions="v2",
+            ),
+        ]
+    )
+    sqlite_session.commit()
+
+    versions = store.list_versions("multi-version")
+    assert versions == [1, 2, 3]
+
+
+def test_store_app_scoped_operations(sqlite_session: Session) -> None:
+    """Ensure CRUD operations respect app scoping."""
+    from pathlib import Path
+
+    from adk_skills_agent.core.models import Skill
+
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    skill = Skill(
+        name="scoped-skill",
+        description="app scoped",
+        location=Path("/test/SKILL.md"),
+        skill_dir=Path("/test"),
+        instructions="app instructions",
+    )
+
+    # Save for app "my-app"
+    store.save_skill(skill, app_name="my-app")
+
+    # Should exist for "my-app"
+    assert store.skill_exists("scoped-skill", app_name="my-app")
+    # Should not exist globally
+    assert not store.skill_exists("scoped-skill", app_name=None)
+
+    # Delete for "my-app"
+    count = store.delete_skill("scoped-skill", app_name="my-app")
+    assert count == 1
+    assert not store.skill_exists("scoped-skill", app_name="my-app")
+
+
+# Registry integration tests
+
+
+def test_registry_save_and_load_skill(sqlite_session: Session) -> None:
+    """Ensure registry can save and load skills from DB."""
+    from pathlib import Path
+
+    from adk_skills_agent.core.models import Skill
+
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    config = SkillsConfig(db_enabled=True, db_session=sqlite_session)
+    registry = SkillsRegistry(config=config)
+
+    skill = Skill(
+        name="registry-test",
+        description="saved via registry",
+        location=Path("/test/SKILL.md"),
+        skill_dir=Path("/test"),
+        instructions="registry instructions",
+    )
+
+    registry.save_skill_to_db(skill)
+
+    # Should be discoverable
+    assert "registry-test" in registry
+    assert registry.skill_exists_in_db("registry-test")
+
+    # Should be loadable
+    loaded = registry.load_skill("registry-test")
+    assert loaded.description == "saved via registry"
+
+
+def test_registry_delete_skill(sqlite_session: Session) -> None:
+    """Ensure registry can delete skills from DB."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    sqlite_session.add(
+        SkillRecord(
+            name="to-delete",
+            app_name=None,
+            version=1,
+            description="will be deleted",
+            instructions="delete me",
+        )
+    )
+    sqlite_session.commit()
+
+    config = SkillsConfig(db_enabled=True, db_session=sqlite_session)
+    registry = SkillsRegistry(config=config)
+
+    assert "to-delete" in registry
+
+    count = registry.delete_skill_from_db("to-delete")
+    assert count == 1
+    assert "to-delete" not in registry
+
+
+def test_registry_list_versions(sqlite_session: Session) -> None:
+    """Ensure registry can list skill versions."""
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    sqlite_session.add_all(
+        [
+            SkillRecord(
+                name="versioned",
+                app_name=None,
+                version=1,
+                description="v1",
+                instructions="v1",
+            ),
+            SkillRecord(
+                name="versioned",
+                app_name=None,
+                version=2,
+                description="v2",
+                instructions="v2",
+            ),
+        ]
+    )
+    sqlite_session.commit()
+
+    config = SkillsConfig(db_enabled=True, db_session=sqlite_session)
+    registry = SkillsRegistry(config=config)
+
+    versions = registry.list_skill_versions("versioned")
+    assert versions == [1, 2]
+
+
+def test_registry_len_no_double_count(sqlite_session: Session) -> None:
+    """Ensure __len__ doesn't double-count skills in both registries."""
+    from pathlib import Path
+
+    store = SkillsStore(sqlite_session)
+    store.ensure_schema()
+
+    # Add a skill to DB
+    sqlite_session.add(
+        SkillRecord(
+            name="shared-skill",
+            app_name=None,
+            version=1,
+            description="in db",
+            instructions="db instructions",
+        )
+    )
+    sqlite_session.commit()
+
+    config = SkillsConfig(db_enabled=True, db_session=sqlite_session)
+    registry = SkillsRegistry(config=config)
+
+    # Manually add the same skill to file registry (simulating discovery)
+    from adk_skills_agent.core.models import SkillMetadata
+
+    registry._metadata_registry["shared-skill"] = SkillMetadata(
+        name="shared-skill",
+        description="in files",
+        location=Path("/test/SKILL.md"),
+    )
+
+    # Should count as 1, not 2
+    assert len(registry) == 1
