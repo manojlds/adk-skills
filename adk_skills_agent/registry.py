@@ -188,7 +188,9 @@ class SkillsRegistry:
         """Return number of discovered skills."""
         if self._db_store is not None:
             self._refresh_db_metadata()
-        return len(self._metadata_registry) + len(self._db_metadata_registry)
+        # Merge to avoid double-counting skills in both registries
+        merged = {**self._metadata_registry, **self._db_metadata_registry}
+        return len(merged)
 
     def __contains__(self, name: str) -> bool:
         """Check if skill exists (supports 'in' operator)."""
@@ -454,3 +456,179 @@ class SkillsRegistry:
             return
         db_metadata = self._db_store.list_metadata(app_name=self.config.app_name)
         self._db_metadata_registry = {metadata.name: metadata for metadata in db_metadata}
+
+    # Database operations
+
+    def save_skill_to_db(self, skill: Skill, version: Optional[int] = None) -> None:
+        """Save a skill to the database.
+
+        Requires db_enabled=True in config.
+
+        Args:
+            skill: The skill to save
+            version: Optional version number (auto-increments if None)
+
+        Raises:
+            RuntimeError: If database is not enabled
+
+        Example:
+            >>> registry = SkillsRegistry(config=SkillsConfig(
+            ...     db_enabled=True, db_session=session
+            ... ))
+            >>> skill = registry.load_skill("my-skill")
+            >>> registry.save_skill_to_db(skill)
+        """
+        if self._db_store is None:
+            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
+
+        self._db_store.save_skill(skill, app_name=self.config.app_name, version=version)
+        self._refresh_db_metadata()
+        # Invalidate cache for this skill
+        self._skill_cache.pop(skill.name, None)
+
+    def delete_skill_from_db(self, name: str, version: Optional[int] = None) -> int:
+        """Delete a skill from the database.
+
+        Args:
+            name: Name of the skill to delete
+            version: If specified, deletes only that version.
+                    If None, deletes all versions.
+
+        Returns:
+            Number of records deleted
+
+        Raises:
+            RuntimeError: If database is not enabled
+
+        Example:
+            >>> registry.delete_skill_from_db("old-skill")  # Delete all versions
+            >>> registry.delete_skill_from_db("my-skill", version=1)  # Delete v1 only
+        """
+        if self._db_store is None:
+            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
+
+        count = self._db_store.delete_skill(name, app_name=self.config.app_name, version=version)
+        self._refresh_db_metadata()
+        # Invalidate cache for this skill
+        self._skill_cache.pop(name, None)
+        return count
+
+    def import_skill_to_db(self, name: str) -> None:
+        """Import a file-based skill into the database.
+
+        Loads the skill from file and saves it to the database,
+        creating a new version.
+
+        Args:
+            name: Name of the file-based skill to import
+
+        Raises:
+            RuntimeError: If database is not enabled
+            SkillNotFoundError: If skill not found in file registry
+
+        Example:
+            >>> registry = SkillsRegistry(config=SkillsConfig(
+            ...     db_enabled=True, db_session=session
+            ... ))
+            >>> registry.discover(["./skills"])
+            >>> registry.import_skill_to_db("my-skill")  # Now in DB
+        """
+        if self._db_store is None:
+            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
+
+        if name not in self._metadata_registry:
+            raise SkillNotFoundError(
+                f"Skill '{name}' not found in file registry. "
+                f"Available: {list(self._metadata_registry.keys())}"
+            )
+
+        # Load from file
+        metadata = self._metadata_registry[name]
+        skill = parse_full(metadata.location)
+
+        # Save to DB
+        self._db_store.import_skill(skill, app_name=self.config.app_name)
+        self._refresh_db_metadata()
+
+    def import_all_to_db(self, skip_existing: bool = True) -> int:
+        """Import all file-based skills into the database.
+
+        Bulk imports all skills from the file registry to the database.
+        Useful for migrating from file-based to database-backed storage.
+
+        This operation is atomic - either all skills are imported successfully,
+        or none are (the transaction is rolled back on error).
+
+        Args:
+            skip_existing: If True (default), skips skills that already exist
+                          in the database. If False, creates new versions.
+
+        Returns:
+            Number of skills imported
+
+        Raises:
+            RuntimeError: If database is not enabled
+            Exception: Re-raises any exception after rolling back transaction
+
+        Example:
+            >>> registry = SkillsRegistry(config=SkillsConfig(
+            ...     db_enabled=True, db_session=session
+            ... ))
+            >>> registry.discover(["./skills"])
+            >>> count = registry.import_all_to_db()
+            >>> print(f"Imported {count} skills to database")
+        """
+        if self._db_store is None:
+            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
+
+        # Load all skills from files first
+        skills = [parse_full(metadata.location) for metadata in self._metadata_registry.values()]
+
+        # Use bulk import for atomicity
+        imported = self._db_store.import_skills_bulk(
+            skills,
+            app_name=self.config.app_name,
+            skip_existing=skip_existing,
+        )
+
+        self._refresh_db_metadata()
+        return imported
+
+    def list_skill_versions(self, name: str) -> list[int]:
+        """List all versions of a skill in the database.
+
+        Args:
+            name: Skill name
+
+        Returns:
+            List of version numbers in ascending order
+
+        Raises:
+            RuntimeError: If database is not enabled
+
+        Example:
+            >>> versions = registry.list_skill_versions("my-skill")
+            >>> print(versions)  # [1, 2, 3]
+        """
+        if self._db_store is None:
+            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
+
+        return self._db_store.list_versions(name, app_name=self.config.app_name)
+
+    def skill_exists_in_db(self, name: str, version: Optional[int] = None) -> bool:
+        """Check if a skill exists in the database.
+
+        Args:
+            name: Skill name to check
+            version: Optional specific version to check
+
+        Returns:
+            True if skill exists in database
+
+        Raises:
+            RuntimeError: If database is not enabled
+        """
+        if self._db_store is None:
+            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
+
+        return self._db_store.skill_exists(name, app_name=self.config.app_name, version=version)
