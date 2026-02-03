@@ -190,7 +190,7 @@ adk-skills/
   - Quick example
   - Links to documentation
 
-- **LICENSE**: MIT License for open source distribution
+- **LICENSE**: Apache 2.0 License for open source distribution
 
 - **DESIGN.md**: Architecture and design decisions
 
