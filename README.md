@@ -56,7 +56,7 @@ agent = Agent(
 - 📦 **On-Demand Loading**: Skills activated only when needed (~50-100 tokens per skill)
 - 🔧 **Script Execution**: Execute Python and Bash scripts from skills
 - 🚀 **Simple Integration**: Tool-based pattern following OpenCode's approach
-- 🔒 **Secure**: Sandboxed script execution with timeouts and resource limits
+- 🔒 **Secure by default**: Script execution uses explicit activation and timeouts
 - 🤖 **Custom Agent Class**: `SkillsAgent` for easy agent creation with built-in skills support
 - 💉 **Prompt Injection**: Inject skills directly into system prompts (XML or text format)
 - ✅ **Validation**: Validate skills against the agentskills.io specification
@@ -436,23 +436,16 @@ agent = SkillsAgent(
 
 **Current Phase**: MVP Complete ✅ → Phase 2 in Progress
 
-- [x] Architecture design complete
-- [x] Implementation plan finalized
-- [x] **Phase 1: Foundation (MVP)** - ✅ Complete!
-  - [x] Core models and parsers
-  - [x] Skills discovery and registry
-  - [x] Validation system
-  - [x] `use_skill` tool for activation
-  - [x] `run_script` and `read_reference` tools
-  - [x] Working examples
-  - [x] 90%+ test coverage (129 tests passing)
-- [ ] Phase 2: Script Execution - In Progress
-  - [x] Basic script execution
-  - [ ] Advanced executors with sandboxing
-- [ ] Phase 3: Advanced Features
-- [ ] Phase 4: Public Release
-
-See [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) for detailed roadmap.
+- [x] Core models and parsers
+- [x] Skills discovery and registry
+- [x] Validation system
+- [x] `use_skill` tool for activation
+- [x] `run_script` and `read_reference` tools
+- [x] Working examples
+- [x] 90%+ test coverage (129 tests passing)
+- [ ] Advanced executors and sandboxing
+- [ ] Advanced features
+- [ ] Public release
 
 ## 🎯 Try It Now
 
@@ -481,21 +474,17 @@ This demonstrates:
 - Helper functions (with_skills, create_skills_agent, inject_skills_prompt)
 - Common integration patterns
 
-See [examples/README.md](examples/README.md) for more details.
+Example skills live in `examples/skills/`.
 
 ## 📚 Documentation
 
-- **[Design Document](DESIGN.md)**: Architecture and technical decisions
-- **[Implementation Plan](IMPLEMENTATION_PLAN.md)**: Phased development roadmap
-- **[Project Structure](PROJECT_STRUCTURE.md)**: Codebase organization
-- **[Examples](examples/README.md)**: Working code examples
-- Quick Start Guide: Coming soon
-- API Reference: Coming soon
-- Skill Developer Guide: Coming soon
+- This README contains the primary usage guide.
+- Example scripts: `examples/basic_example.py`, `examples/advanced_example.py`
+- Example skills: `examples/skills/`
 
 ## 🤝 Contributing
 
-We welcome contributions! This project is in active development. See our [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md) to find areas where you can help.
+We welcome contributions! This project is in active development.
 
 ### Development Setup
 
