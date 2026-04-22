@@ -86,6 +86,7 @@ class SkillsRegistry:
         if source in self._sources:
             return
         self._sources.append(source)
+        self._skill_cache.clear()
 
     def remove_source(self, source: SkillSource) -> None:
         """Unregister a previously added source. No-op if absent."""
@@ -321,11 +322,7 @@ class SkillsRegistry:
         Unlike :meth:`list_metadata`, this method is collision-tolerant and
         de-duplicates names when multiple sources expose the same skill.
         """
-        names: set[str] = set()
-        for source in self._sources:
-            for metadata in source.list_metadata():
-                names.add(metadata.name)
-        return len(names)
+        return len(self._available_skill_names())
 
     def __contains__(self, name: str) -> bool:
         """Return whether any source exposes ``name``.
@@ -426,12 +423,19 @@ class SkillsRegistry:
         metadata = self.get_metadata(name)
         if metadata is None:
             raise SkillNotFoundError(
-                f"Skill '{name}' not found. "
-                f"Available skills: {[m.name for m in self.list_metadata()]}"
+                f"Skill '{name}' not found. Available skills: {self._available_skill_names()}"
             )
         return validate_skill_metadata(metadata, strict=strict)
 
     # Internals --------------------------------------------------------------
+
+    def _available_skill_names(self) -> list[str]:
+        """Return sorted, collision-tolerant skill names across all sources."""
+        names: set[str] = set()
+        for source in self._sources:
+            for metadata in source.list_metadata():
+                names.add(metadata.name)
+        return sorted(names)
 
     def _resolve_source(self, name: str) -> SkillSource:
         """Return the single source that provides ``name``.
@@ -444,8 +448,7 @@ class SkillsRegistry:
         source = self._find_source(name)
         if source is None:
             raise SkillNotFoundError(
-                f"Skill '{name}' not found. "
-                f"Available skills: {[m.name for m in self.list_metadata()]}"
+                f"Skill '{name}' not found. Available skills: {self._available_skill_names()}"
             )
         return source
 
