@@ -24,16 +24,16 @@ jobs:
           echo "Checking if $AUTHOR is a trusted contributor..."
 
           if gh api "/repos/$REPO/collaborators/$AUTHOR" --silent 2>/dev/null; then
-            echo "✅ $AUTHOR is a repository collaborator"
+            echo "[OK] $AUTHOR is a repository collaborator"
             echo "is-trusted=true" >> $GITHUB_OUTPUT
           else
-            echo "⚠️  $AUTHOR is an external contributor"
+            echo "[WARN] $AUTHOR is an external contributor"
             echo "is-trusted=false" >> $GITHUB_OUTPUT
           fi
 
           LABELS='${{ toJSON(github.event.pull_request.labels.*.name) }}'
           if echo "$LABELS" | grep -q "safe-to-review"; then
-            echo "✅ PR has 'safe-to-review' label"
+            echo "[OK] PR has 'safe-to-review' label"
             echo "has-review-label=true" >> $GITHUB_OUTPUT
           else
             echo "has-review-label=false" >> $GITHUB_OUTPUT
@@ -67,35 +67,25 @@ jobs:
         run: npm install -g opencode-ai
 
       - name: Install DRS
-        run: npm install -g @diff-review-system/drs
-
-      - name: Setup OpenCode Zen Authentication
-        if: env.OPENCODE_ZEN_API_KEY != ''
-        env:
-          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
-        run: |
-          echo "🔑 Setting up OpenCode Zen authentication..."
-          mkdir -p ~/.local/share/opencode
-          cat > ~/.local/share/opencode/auth.json <<EOF
-          {
-            "opencode": {
-              "type": "api",
-              "key": "${OPENCODE_ZEN_API_KEY}"
-            }
-          }
-          EOF
-          echo "✅ OpenCode Zen auth.json created"
+        run: npm install -g @diff-review-system/drs@^3.0.0
 
       - name: Review Pull Request (Trusted Contributor)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
-          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          echo "🚀 Starting PR review for trusted contributor..."
-          echo "👤 Author: ${{ github.event.pull_request.user.login }} (trusted)"
+          echo "Starting PR review for trusted contributor..."
+          echo "Author: ${{ github.event.pull_request.user.login }} (trusted)"
+
+          if [ -z "${OPENCODE_API_KEY}" ] && [ -n "${OPENCODE_ZEN_API_KEY}" ]; then
+            export OPENCODE_API_KEY="${OPENCODE_ZEN_API_KEY}"
+          fi
+
+          if [ -z "${OPENCODE_API_KEY}" ]; then
+            echo "Missing OPENCODE_API_KEY secret (or fallback OPENCODE_ZEN_API_KEY)."
+            exit 1
+          fi
 
           drs review-pr \
             --owner ${{ github.event.repository.owner.login }} \
@@ -135,35 +125,25 @@ jobs:
         run: npm install -g opencode-ai
 
       - name: Install DRS
-        run: npm install -g @diff-review-system/drs
-
-      - name: Setup OpenCode Zen Authentication
-        if: env.OPENCODE_ZEN_API_KEY != ''
-        env:
-          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
-        run: |
-          echo "🔑 Setting up OpenCode Zen authentication..."
-          mkdir -p ~/.local/share/opencode
-          cat > ~/.local/share/opencode/auth.json <<EOF
-          {
-            "opencode": {
-              "type": "api",
-              "key": "${OPENCODE_ZEN_API_KEY}"
-            }
-          }
-          EOF
-          echo "✅ OpenCode Zen auth.json created"
+        run: npm install -g @diff-review-system/drs@^3.0.0
 
       - name: Review Pull Request (External Contributor)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
-          ZHIPU_API_KEY: ${{ secrets.ZHIPU_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          echo "🚀 Starting PR review for external contributor..."
-          echo "👤 Author: ${{ github.event.pull_request.user.login }} (external - approved)"
+          echo "Starting PR review for external contributor..."
+          echo "Author: ${{ github.event.pull_request.user.login }} (external - approved)"
+
+          if [ -z "${OPENCODE_API_KEY}" ] && [ -n "${OPENCODE_ZEN_API_KEY}" ]; then
+            export OPENCODE_API_KEY="${OPENCODE_ZEN_API_KEY}"
+          fi
+
+          if [ -z "${OPENCODE_API_KEY}" ]; then
+            echo "Missing OPENCODE_API_KEY secret (or fallback OPENCODE_ZEN_API_KEY)."
+            exit 1
+          fi
 
           drs review-pr \
             --owner ${{ github.event.repository.owner.login }} \
@@ -188,7 +168,7 @@ jobs:
         run: |
           gh pr comment ${{ github.event.pull_request.number }} \
             --repo ${{ github.repository }} \
-            --body "👋 Thanks for your contribution!
+            --body "Thanks for your contribution!
 
           Since this is from an external contributor, automated review requires approval from a repository maintainer.
 
@@ -196,4 +176,4 @@ jobs:
           1. Add the \`safe-to-review\` label to this PR
           2. Approve the workflow run in the Actions tab
 
-          This helps prevent abuse and protects API costs. Thank you for understanding! 🙏"
+          This helps prevent abuse and protects API costs. Thank you for understanding!"
