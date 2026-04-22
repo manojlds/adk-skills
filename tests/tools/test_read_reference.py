@@ -39,7 +39,8 @@ class TestCreateReadReferenceTool:
 
         assert result["content"] == "# Reference Guide\n\nThis is a guide."
         assert result["filename"] == "guide.md"
-        assert result["path"] == str(ref_file)
+        # Locator is skill-root-relative, not an on-disk path.
+        assert result["path"] == "references/guide.md"
 
     def test_read_reference_skill_not_found(self):
         """Test error when skill doesn't exist."""
@@ -50,7 +51,7 @@ class TestCreateReadReferenceTool:
             tool("nonexistent-skill", "guide.md")
 
     def test_read_reference_no_references_dir(self, tmp_path):
-        """Test error when skill has no references directory."""
+        """Test error when skill has no references directory (file simply missing)."""
         skill_dir = tmp_path / "test-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -62,7 +63,9 @@ class TestCreateReadReferenceTool:
 
         tool = create_read_reference_tool(registry)
 
-        with pytest.raises(SkillExecutionError, match="no references/"):
+        # With generalized read_reference, a bare filename maps to
+        # ``references/guide.md`` and the error is just "not found".
+        with pytest.raises(SkillExecutionError, match="not found"):
             tool("test-skill", "guide.md")
 
     def test_read_reference_file_not_found(self, tmp_path):

@@ -18,27 +18,6 @@ class TestFindSkillMd:
         assert skill_path is not None
         assert skill_path.name == "SKILL.md"
 
-    def test_find_lowercase_skill_md(self, tmp_path: Path) -> None:
-        """Test finding skill.md (lowercase)."""
-        skill_dir = tmp_path / "test-skill"
-        skill_dir.mkdir()
-        (skill_dir / "skill.md").write_text("---\nname: test\n---\n\nBody")
-
-        skill_path = find_skill_md(skill_dir)
-        assert skill_path is not None
-        assert skill_path.name == "skill.md"
-
-    def test_prefer_uppercase(self, tmp_path: Path) -> None:
-        """Test preference for SKILL.md over skill.md."""
-        skill_dir = tmp_path / "test-skill"
-        skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text("---\nname: test1\n---\n\nBody1")
-        (skill_dir / "skill.md").write_text("---\nname: test2\n---\n\nBody2")
-
-        skill_path = find_skill_md(skill_dir)
-        assert skill_path is not None
-        assert skill_path.name == "SKILL.md"
-
     def test_not_found(self, tmp_path: Path) -> None:
         """Test returning None when SKILL.md not found."""
         skill_dir = tmp_path / "test-skill"

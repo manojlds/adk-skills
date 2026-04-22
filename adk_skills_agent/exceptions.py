@@ -35,3 +35,15 @@ class SkillConfigError(SkillError):
     """Raised when skill configuration is invalid."""
 
     pass
+
+
+class SkillSourceCollisionError(SkillError):
+    """Raised when multiple skill sources expose the same skill name.
+
+    Collisions are treated as configuration errors: the registry refuses to
+    resolve them silently because the "winner" would otherwise depend on the
+    order in which sources were registered. Callers should rename one of the
+    conflicting skills or restrict the sources they compose.
+    """
+
+    pass

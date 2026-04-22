@@ -2,14 +2,27 @@
 
 This library enables ADK agents to discover and activate skills on-demand
 using the standard Agent Skills format (agentskills.io).
+
+Starting in 0.2.0, the library ships a pluggable
+:class:`~adk_skills_agent.core.source.SkillSource` abstraction. The registry
+composes one or more sources; the built-in
+:class:`~adk_skills_agent.sources.filesystem.FilesystemSkillSource` covers
+directory-based skills, and applications plug in their own sources (database
+schemas, remote registries, object storage, …) via
+:meth:`SkillsRegistry.add_source`. Any source can implement
+:meth:`SkillSource.list_files` / :meth:`SkillSource.read_file` to surface
+references, assets, and any other files in a skill package (text or binary).
+Reference-path normalisation and the text-only ``read_reference`` wrapper
+live on the registry, so custom sources only need to implement raw
+:meth:`SkillSource.read_file`.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
-# Core imports
-# Agent and helpers
 from .agent import SkillsAgent
 from .core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
+from .core.paths import normalize_skill_reference, validate_skill_root_relative_path
+from .core.source import ReferenceFile, ScriptResult, SkillFile, SkillSource
 from .core.validator import validate_skill
 from .exceptions import (
     SkillConfigError,
@@ -17,10 +30,12 @@ from .exceptions import (
     SkillExecutionError,
     SkillNotFoundError,
     SkillParseError,
+    SkillSourceCollisionError,
     SkillValidationError,
 )
 from .helpers import create_skills_agent, inject_skills_prompt, with_skills
 from .registry import SkillsRegistry
+from .sources.filesystem import FilesystemSkillSource
 
 __all__ = [
     "__version__",
@@ -30,6 +45,15 @@ __all__ = [
     "SkillMetadata",
     "SkillsConfig",
     "ValidationResult",
+    # Source abstraction
+    "SkillSource",
+    "ReferenceFile",
+    "ScriptResult",
+    "SkillFile",
+    "FilesystemSkillSource",
+    # Path helpers for custom source authors
+    "normalize_skill_reference",
+    "validate_skill_root_relative_path",
     # Agent integration
     "SkillsAgent",
     # Helper functions
@@ -44,4 +68,5 @@ __all__ = [
     "SkillParseError",
     "SkillExecutionError",
     "SkillConfigError",
+    "SkillSourceCollisionError",
 ]

@@ -54,6 +54,8 @@ agent = Agent(
 
 - 🎯 **Standard Compliance**: 100% compatible with [agentskills.io](https://agentskills.io) specification
 - 📦 **On-Demand Loading**: Skills activated only when needed (~50-100 tokens per skill)
+- 🔌 **Pluggable Skill Sources**: Plug the built-in filesystem source alongside your own sources (database, remote registry, object storage, …) through a single `SkillSource` interface
+- 📁 **Multi-file Skill Packages**: Read `SKILL.md`, references, and binary assets from any backend via the generic `list_files` / `read_file` API
 - 🔧 **Script Execution**: Execute Python and Bash scripts from skills
 - 🚀 **Simple Integration**: Tool-based pattern following OpenCode's approach
 - 🔒 **Secure by default**: Script execution uses explicit activation and timeouts
@@ -224,54 +226,156 @@ agent = Agent(
 )
 ```
 
-### Database-Backed Skills (Optional)
+### Pluggable Skill Sources
 
-Persist skills in a database using the optional SQLAlchemy support. Install the extra:
+Starting in `0.2.0`, `SkillsRegistry` is composed of one or more **skill
+sources**. A source is anything that implements the `SkillSource` abstract
+base class and knows how to list metadata, load a full skill, and
+(optionally) expose the files that back a skill package or run scripts.
 
-```bash
-uv pip install adk-skills-agent[db]
-```
+The registry ships with one built-in source:
 
-Then provide a SQLAlchemy session to `SkillsRegistry`:
+- `FilesystemSkillSource` — default source backing `registry.discover(...)`.
+  Use this for engineering-owned skills that live in your repo as directories
+  of `SKILL.md` files.
+
+Everything else — database schemas, remote registries, managed catalogues,
+object storage — is a custom source. This keeps `adk-skills-agent` focused on
+the generic abstractions; applications own the storage layer that best fits
+their data model (versioning, publishing, binary assets, access control, …).
+A working, multi-file SQLite-backed source lives in
+[`tests/integration/test_sqlite_skill_source.py`](tests/integration/test_sqlite_skill_source.py)
+and is the recommended starting point for writing your own.
+
+The minimal shape of a custom source:
 
 ```python
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from adk_skills_agent import SkillSource, SkillsRegistry
+from adk_skills_agent.core.models import Skill, SkillMetadata
 
-from adk_skills_agent import SkillsRegistry
-from adk_skills_agent.core.models import SkillsConfig
 
-engine = create_engine("sqlite:///skills.db")
-session = Session(engine)
+class MyDatabaseSource(SkillSource):
+    name = "my-db"
 
-config = SkillsConfig(
-    db_enabled=True,
-    db_session=session,
-    db_auto_create=False,  # Leave schema management to your app
-    app_name="support-assistant",
+    def list_metadata(self) -> list[SkillMetadata]:
+        ...
+
+    def load_skill(self, name: str) -> Skill:
+        ...
+
+    # Implement list_files / read_file if your source stores multi-file
+    # skill packages (references, assets, binaries). ``read_reference`` is
+    # provided by the registry automatically on top of ``read_file`` — no
+    # override needed.
+
+
+registry = SkillsRegistry()
+registry.discover(["./skills"])            # filesystem source
+registry.add_source(MyDatabaseSource())    # your source
+```
+
+#### Collision policy
+
+Skill names are globally unique across all registered sources. If two sources
+advertise a skill with the same name, `registry.list_metadata()` (and any lookup
+that needs to enumerate metadata) raises `SkillSourceCollisionError`. This is
+intentional: the registry refuses to guess which version to serve and expects
+you to resolve the conflict at the source level (rename, namespace, or remove).
+
+#### What sources implement
+
+Each source owns its own storage and decides which capabilities it can offer:
+
+| Method | Required? | Notes |
+| --- | --- | --- |
+| `list_metadata()` | **Required** | Cheap skill discovery. |
+| `load_skill(name)` | **Required** | Full skill body on activation. |
+| `has_skill(name)` | Optional | Default falls back to `list_metadata`; override for a cheap existence check. |
+| `list_files(skill_name)` | Optional | Needed whenever your source stores more than the prompt. |
+| `read_file(skill_name, path)` | Optional | Single file I/O primitive for the registry. |
+| `run_script(...)` | Optional | Only sources that can materialise scripts on disk. |
+
+Sources that cannot honour an optional capability should leave the default in
+place; the registry converts the resulting `NotImplementedError` into a
+`SkillExecutionError` with a clear "source does not support …" message. For
+example, a prompt-only database source that does not implement `list_files`
+/ `read_file` / `run_script` will cause any call that needs them to fail
+cleanly rather than silently.
+
+#### Reference reads are a registry-level concern
+
+`read_reference` is **not** part of the `SkillSource` contract. The registry
+implements it once, on top of whatever source owns the skill, by:
+
+1. Normalising the caller's input with
+   `adk_skills_agent.core.paths.normalize_skill_reference`
+   (`"guide.md"` -> `"references/guide.md"`, `"assets/template.json"` passes
+   through, `"SKILL.md"` passes through, etc.).
+2. Delegating to `source.read_file(skill_name, normalized_path)`.
+3. Refusing binary payloads with a clear "use `read_file()` for binary
+   assets" message.
+4. Wrapping the text content in a `ReferenceFile` whose `path` is
+   skill-root-relative (e.g. `"references/guide.md"`) — source-agnostic.
+
+Custom sources only need a correct `read_file`; the reference UX is free.
+Path helpers are also exported for source authors that need them directly:
+
+```python
+from adk_skills_agent import (
+    normalize_skill_reference,
+    validate_skill_root_relative_path,
 )
-registry = SkillsRegistry(config=config)
-
-# Skills metadata and prompts now include DB entries.
-skills_prompt = registry.get_skills_prompt("xml")
 ```
 
-#### Session ownership & migrations
+#### Generic file access (list_files / read_file)
 
-`adk-skills-agent` expects the host application to manage SQLAlchemy engine/session
-lifecycle and database migrations. In production services (e.g., FastAPI), keep
-schema creation and transaction boundaries in the application layer.
+Every source that stores multi-file skill packages should expose two methods:
 
-For Alembic, you can include the library metadata in your `env.py`:
+- `list_files(skill_name) -> list[SkillFile]` enumerates every file in a skill
+  package (`SKILL.md`, anything under `references/`, `assets/`, and anything
+  else the skill author included) with path, size, MIME type and a content
+  hash.
+- `read_file(skill_name, relative_path) -> SkillFile` fetches a single file
+  and returns a `SkillFile` with exactly one of `text_content` /
+  `binary_content` populated.
+
+`FilesystemSkillSource` implements both methods. Custom sources that back a
+richer storage layer (a database schema that stores every skill file
+separately, an object-storage adapter, a remote catalogue, …) should
+implement these to expose the full skill contents. Sources that cannot
+enumerate or read files leave the defaults in place, and the registry
+surfaces a clear `SkillExecutionError` when a caller needs them.
 
 ```python
-from adk_skills_agent.db import get_metadata
+from adk_skills_agent import SkillsRegistry
 
-target_metadata = get_metadata()
+registry = SkillsRegistry()
+registry.discover(["./skills"])
+
+for meta in registry.list_files("pdf-processing"):
+    print(meta.relative_path, meta.mime_type, meta.size_bytes)
+
+template = registry.read_file("pdf-processing", "assets/template.json")
+assert template.is_text
+print(template.text_content)
 ```
 
-You can also import `Base.metadata` directly from `adk_skills_agent.db.models`
-if you prefer. Use `db_auto_create=True` only for local demos/tests.
+#### Relaxed read_reference semantics
+
+`registry.read_reference(skill, path)` accepts any path relative to the skill
+root:
+
+- `"guide.md"` -> resolves to `references/guide.md` (backwards compat)
+- `"guides/intro.md"` -> resolves to `references/guides/intro.md` (nested refs)
+- `"references/guide.md"` -> resolves as-is
+- `"assets/template.json"` -> resolves as-is (useful for LLM-readable assets)
+- `"SKILL.md"` -> resolves as-is
+
+Binary files are rejected with a `SkillExecutionError` — use `read_file` for
+those. Paths that try to escape the skill directory (`..` segments, absolute
+paths, symlinks that leave the root) are refused. When a reference is missing,
+the error message includes an `Available: [...]` hint listing sibling files
+in the same directory (when the owning source supports `list_files`).
 
 ### Skills Validation
 
