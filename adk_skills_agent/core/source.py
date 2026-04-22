@@ -150,6 +150,17 @@ class SkillSource(abc.ABC):
         """
         return any(meta.name == name for meta in self.list_metadata())
 
+    def get_metadata(self, name: str) -> SkillMetadata | None:
+        """Return metadata for ``name`` or ``None`` if unknown.
+
+        The default implementation scans :meth:`list_metadata`; subclasses can
+        override for O(1) lookup when they keep a metadata index in memory.
+        """
+        for metadata in self.list_metadata():
+            if metadata.name == name:
+                return metadata
+        return None
+
     def list_files(self, skill_name: str) -> list[SkillFile]:
         """Return metadata for every file belonging to ``skill_name``.
 

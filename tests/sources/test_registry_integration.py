@@ -216,6 +216,32 @@ class TestRouting:
             "filename": "note.md",
         }
 
+    def test_read_reference_rejects_path_escape_before_source(self, memory_skill: Skill) -> None:
+        registry = SkillsRegistry()
+        registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
+
+        with pytest.raises(SkillExecutionError, match="escapes skill directory"):
+            registry.read_reference("memory-one", "../../secret.txt")
+
+    def test_read_reference_errors_when_source_returns_no_content(
+        self, memory_skill: Skill
+    ) -> None:
+        registry = SkillsRegistry()
+        source = _InMemorySource({memory_skill.name: memory_skill})
+        source.add_file(
+            "memory-one",
+            SkillFile(
+                relative_path="references/empty.md",
+                mime_type="text/markdown",
+                size_bytes=0,
+                content_hash="hash",
+            ),
+        )
+        registry.add_source(source)
+
+        with pytest.raises(SkillExecutionError, match="returned no content"):
+            registry.read_reference("memory-one", "empty.md")
+
     def test_list_files_routes_to_filesystem_source(self, tmp_path: Path) -> None:
         skill_dir = tmp_path / "pkg"
         skill_dir.mkdir()
