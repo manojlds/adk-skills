@@ -123,6 +123,26 @@ class TestAddSource:
         with pytest.raises(SkillNotFoundError):
             registry.load_skill("memory-one")
 
+    def test_add_source_clears_cache_for_collision_detection(self, tmp_path: Path) -> None:
+        _write_skill(tmp_path, "dup")
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+
+        # Warm the cache from filesystem source.
+        registry.load_skill("dup")
+
+        other = Skill(
+            name="dup",
+            description="duplicate",
+            location=Path("/__mem__/dup"),
+            skill_dir=Path("/__mem__/dup"),
+            instructions="other",
+        )
+        registry.add_source(_InMemorySource({"dup": other}))
+
+        with pytest.raises(SkillSourceCollisionError):
+            registry.load_skill("dup")
+
 
 class TestCollisionDetection:
     def test_list_metadata_raises_on_collision(self, tmp_path: Path, memory_skill: Skill) -> None:
@@ -165,6 +185,28 @@ class TestCollisionDetection:
         registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
 
         assert len(registry) == 1
+
+    def test_missing_skill_error_is_not_masked_by_collision(
+        self, tmp_path: Path, memory_skill: Skill
+    ) -> None:
+        _write_skill(tmp_path, "memory-one")
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
+
+        with pytest.raises(SkillNotFoundError):
+            registry.load_skill("not-here")
+
+    def test_validate_missing_skill_error_is_not_masked_by_collision(
+        self, tmp_path: Path, memory_skill: Skill
+    ) -> None:
+        _write_skill(tmp_path, "memory-one")
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
+
+        with pytest.raises(SkillNotFoundError):
+            registry.validate_skill_by_name("not-here")
 
 
 class TestRouting:

@@ -40,6 +40,11 @@ def normalize_skill_reference(reference: str) -> str:
     * ``"SKILL.md"`` -> unchanged
     * Backslashes are normalised to forward slashes; leading ``/`` stripped.
 
+    Note:
+        This function does **not** validate path safety. Call
+        :func:`validate_skill_root_relative_path` on the returned value before
+        reading files.
+
     Raises:
         SkillExecutionError: If ``reference`` is empty.
     """
