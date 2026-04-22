@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from adk_skills_agent.core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
-from adk_skills_agent.core.paths import normalize_skill_reference
+from adk_skills_agent.core.paths import normalize_skill_reference, validate_skill_root_relative_path
 from adk_skills_agent.core.source import ReferenceFile, SkillFile, SkillSource
 from adk_skills_agent.core.validator import validate_skill_metadata
 from adk_skills_agent.exceptions import (
@@ -163,10 +163,7 @@ class SkillsRegistry:
         source = self._find_source(name)
         if source is None:
             return None
-        for metadata in source.list_metadata():
-            if metadata.name == name:
-                return metadata
-        return None
+        return source.get_metadata(name)
 
     def load_skill(self, name: str) -> Skill:
         """Load full skill content on-demand, consulting every source.
@@ -247,29 +244,35 @@ class SkillsRegistry:
         """
         source = self._resolve_source(skill_name)
         normalized = normalize_skill_reference(reference)
+        validated = validate_skill_root_relative_path(normalized)
 
         try:
-            file = source.read_file(skill_name, normalized)
+            file = source.read_file(skill_name, validated)
         except NotImplementedError as e:
             raise SkillExecutionError(
                 f"Source '{source.name}' does not support reading references"
             ) from e
         except SkillExecutionError as e:
-            hint = self._format_available_hint(source, skill_name, normalized)
+            hint = self._format_available_hint(source, skill_name, validated)
             if hint and hint not in str(e):
                 raise SkillExecutionError(f"{e}{hint}") from e
             raise
 
         if file.text_content is None:
+            if file.binary_content is not None:
+                raise SkillExecutionError(
+                    f"Reference '{reference}' in skill '{skill_name}' is not a text "
+                    "file; use read_file() for binary assets."
+                )
             raise SkillExecutionError(
-                f"Reference '{reference}' in skill '{skill_name}' is not a text "
-                "file; use read_file() for binary assets."
+                f"Source '{source.name}' returned no content for '{validated}' "
+                f"in skill '{skill_name}'."
             )
 
         return ReferenceFile(
             content=file.text_content,
-            path=normalized,
-            filename=Path(normalized).name,
+            path=validated,
+            filename=Path(validated).name,
         )
 
     @staticmethod
@@ -313,6 +316,11 @@ class SkillsRegistry:
         self._skill_cache.clear()
 
     def __len__(self) -> int:
+        """Return the number of unique skill names across all sources.
+
+        Unlike :meth:`list_metadata`, this method is collision-tolerant and
+        de-duplicates names when multiple sources expose the same skill.
+        """
         names: set[str] = set()
         for source in self._sources:
             for metadata in source.list_metadata():
@@ -320,6 +328,11 @@ class SkillsRegistry:
         return len(names)
 
     def __contains__(self, name: str) -> bool:
+        """Return whether any source exposes ``name``.
+
+        This method is collision-tolerant; use :meth:`load_skill` or
+        :meth:`list_metadata` to surface :class:`SkillSourceCollisionError`.
+        """
         return self.has_skill(name)
 
     def __repr__(self) -> str:

@@ -95,6 +95,9 @@ class FilesystemSkillSource(SkillSource):
     def has_skill(self, name: str) -> bool:
         return name in self._metadata
 
+    def get_metadata(self, name: str) -> SkillMetadata | None:
+        return self._metadata.get(name)
+
     def load_skill(self, name: str) -> Skill:
         if name in self._skill_cache:
             return self._skill_cache[name]
