@@ -1,24 +1,50 @@
-"""SkillsRegistry - main interface for managing skills in ADK."""
+"""SkillsRegistry - main interface for managing skills in ADK.
+
+The registry composes one or more :class:`~adk_skills_agent.core.source.SkillSource`
+instances. By default it installs a built-in
+:class:`~adk_skills_agent.sources.filesystem.FilesystemSkillSource` for the
+``discover([...])`` workflow.
+
+Applications bring their own sources (remote registries, object storage,
+database schemas, ...) via :meth:`SkillsRegistry.add_source`. All read
+operations (``list_metadata``, ``load_skill``, ``read_reference``,
+``run_script``) are routed through the registered sources.
+
+Collisions
+    If two sources expose the same skill name, the registry raises
+    :class:`~adk_skills_agent.exceptions.SkillSourceCollisionError` instead of
+    silently picking a winner. Rename one of the skills or scope your sources
+    to avoid overlap.
+"""
+
+from __future__ import annotations
 
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
-from adk_skills_agent.core.discovery import discover_skills
 from adk_skills_agent.core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
-from adk_skills_agent.core.parser import parse_full
+from adk_skills_agent.core.paths import normalize_skill_reference
+from adk_skills_agent.core.source import ReferenceFile, ScriptResult, SkillFile, SkillSource
 from adk_skills_agent.core.validator import validate_skill_metadata
-from adk_skills_agent.exceptions import SkillNotFoundError
+from adk_skills_agent.exceptions import (
+    SkillExecutionError,
+    SkillNotFoundError,
+    SkillSourceCollisionError,
+)
+from adk_skills_agent.sources.filesystem import FilesystemSkillSource
 
 
 class SkillsRegistry:
     """Main registry for managing Agent Skills in ADK.
 
-    This is the primary interface for:
-    - Discovering skills from directories (metadata-only, fast)
-    - Loading full skills on-demand (when activated)
-    - Listing available skills
-    - Creating tools for ADK agents
+    The registry is the primary entry point for:
+
+    * Discovering skills from directories (metadata-only, fast)
+    * Loading full skills on-demand (when activated by an agent)
+    * Listing available skills across one or more sources
+    * Creating tools for ADK agents (:meth:`create_use_skill_tool`, etc.)
+    * Reading references and running scripts via the owning source
 
     Example:
         >>> registry = SkillsRegistry()
@@ -27,398 +53,374 @@ class SkillsRegistry:
         >>> skill = registry.load_skill("pdf-processing")
     """
 
-    def __init__(self, config: Optional[SkillsConfig] = None):
+    def __init__(self, config: SkillsConfig | None = None):
         """Initialize skills registry.
 
         Args:
             config: Optional configuration. Uses defaults if not provided.
         """
         self.config = config or SkillsConfig()
-        self._metadata_registry: dict[str, SkillMetadata] = {}
+        self._sources: list[SkillSource] = []
         self._skill_cache: dict[str, Skill] = {}
-        self._db_metadata_registry: dict[str, SkillMetadata] = {}
-        self._db_store = None
 
-        if self.config.db_enabled:
-            if self.config.db_session is None:
-                raise ValueError("db_session is required when db_enabled is True.")
-            from adk_skills_agent.db.store import SkillsStore
+        # Built-in filesystem source: receives anything passed to discover().
+        self._filesystem_source = FilesystemSkillSource(
+            strict_validation=self.config.strict_validation,
+            script_timeout=self.config.script_timeout,
+        )
+        self._sources.append(self._filesystem_source)
 
-            self._db_store = SkillsStore(self.config.db_session)
-            if self.config.db_auto_create:
-                self._db_store.ensure_schema()
-            self._refresh_db_metadata()
-
-        # Auto-discover if configured
         if self.config.auto_discover and self.config.skills_directories:
             self.discover(self.config.skills_directories)
 
-    def discover(self, directories: Sequence[Union[str, Path]]) -> int:
-        """Discover skills from directories.
+    # Source management ------------------------------------------------------
 
-        This performs fast metadata-only parsing of SKILL.md files.
+    def add_source(self, source: SkillSource) -> None:
+        """Register an additional :class:`SkillSource` with the registry.
+
+        Sources are consulted in registration order when resolving a skill;
+        however the registry hard-fails on name collisions across sources, so
+        order is never used to pick a "winner".
+        """
+        if not isinstance(source, SkillSource):
+            raise TypeError(f"Expected a SkillSource subclass, got {type(source).__name__}")
+        if source in self._sources:
+            return
+        self._sources.append(source)
+
+    def remove_source(self, source: SkillSource) -> None:
+        """Unregister a previously added source. No-op if absent."""
+        if source is self._filesystem_source:
+            raise ValueError("Cannot remove the built-in filesystem source.")
+        try:
+            self._sources.remove(source)
+        except ValueError:
+            return
+        self._skill_cache.clear()
+
+    @property
+    def sources(self) -> list[SkillSource]:
+        """Return a copy of the registered sources (ordered)."""
+        return list(self._sources)
+
+    # Discovery --------------------------------------------------------------
+
+    def discover(self, directories: Sequence[str | Path]) -> int:
+        """Discover skills from directories using the built-in filesystem source.
 
         Args:
-            directories: List of directory paths to scan
+            directories: List of directory paths to scan.
 
         Returns:
-            Number of skills discovered
+            Total number of skills the filesystem source currently indexes.
 
         Example:
             >>> registry = SkillsRegistry()
             >>> count = registry.discover(["./skills"])
             >>> print(f"Found {count} skills")
         """
-        # Convert string paths to Path objects
-        paths = [Path(d).expanduser().resolve() for d in directories]
+        return self._filesystem_source.add_directories(directories)
 
-        # Discover skills (metadata only)
-        discovered = discover_skills(paths)
-
-        # Validate and add to registry
-        for metadata in discovered:
-            if self.config.strict_validation:
-                result = validate_skill_metadata(metadata, strict=True)
-                if not result.valid:
-                    # Skip invalid skills in strict mode
-                    continue
-
-            # Add to registry (skip duplicates)
-            if metadata.name not in self._metadata_registry:
-                self._metadata_registry[metadata.name] = metadata
-
-        return len(self._metadata_registry)
+    # Core reads -------------------------------------------------------------
 
     def list_metadata(self) -> list[SkillMetadata]:
-        """List all discovered skills (lightweight metadata).
-
-        Returns:
-            List of SkillMetadata for all discovered skills
-        """
-        if self._db_store is not None:
-            self._refresh_db_metadata()
-        merged = {**self._metadata_registry, **self._db_metadata_registry}
-        return list(merged.values())
-
-    def get_metadata(self, name: str) -> Optional[SkillMetadata]:
-        """Get metadata for a specific skill.
-
-        Args:
-            name: Skill name
-
-        Returns:
-            SkillMetadata if found, None otherwise
-        """
-        if self._db_store is not None:
-            self._refresh_db_metadata()
-        if name in self._db_metadata_registry:
-            return self._db_metadata_registry[name]
-        return self._metadata_registry.get(name)
-
-    def load_skill(self, name: str) -> Skill:
-        """Load full skill content on-demand.
-
-        This parses the complete SKILL.md including instructions.
-
-        Args:
-            name: Skill name to load
-
-        Returns:
-            Full Skill object with instructions
+        """List metadata for every known skill across all sources.
 
         Raises:
-            SkillNotFoundError: If skill not found in registry
-
-        Example:
-            >>> skill = registry.load_skill("pdf-processing")
-            >>> print(skill.instructions)
+            SkillSourceCollisionError: If two or more sources expose the same
+                skill name.
         """
-        # Check cache first
+        seen: dict[str, tuple[SkillSource, SkillMetadata]] = {}
+        collisions: list[tuple[str, str, str]] = []
+
+        for source in self._sources:
+            for metadata in source.list_metadata():
+                previous = seen.get(metadata.name)
+                if previous is None:
+                    seen[metadata.name] = (source, metadata)
+                    continue
+                previous_source, _ = previous
+                if previous_source is source:
+                    # Within-source duplicates are the source's own concern.
+                    continue
+                collisions.append((metadata.name, previous_source.name, source.name))
+
+        if collisions:
+            detail = ", ".join(
+                f"'{name}' (in sources {a!r} and {b!r})" for name, a, b in collisions
+            )
+            raise SkillSourceCollisionError(
+                "Skill name collisions detected across sources: " + detail
+            )
+
+        return [metadata for _, metadata in seen.values()]
+
+    def get_metadata(self, name: str) -> SkillMetadata | None:
+        """Return metadata for ``name`` or ``None`` if unknown.
+
+        Raises:
+            SkillSourceCollisionError: If two or more sources expose ``name``.
+        """
+        source = self._find_source(name)
+        if source is None:
+            return None
+        for metadata in source.list_metadata():
+            if metadata.name == name:
+                return metadata
+        return None
+
+    def load_skill(self, name: str) -> Skill:
+        """Load full skill content on-demand, consulting every source.
+
+        Args:
+            name: Skill name to load.
+
+        Returns:
+            Full :class:`Skill` object with instructions.
+
+        Raises:
+            SkillNotFoundError: If no source provides the skill.
+            SkillSourceCollisionError: If two or more sources expose ``name``.
+        """
         if name in self._skill_cache:
             return self._skill_cache[name]
 
-        # Get metadata
-        metadata = self.get_metadata(name)
-        if metadata is None:
-            available = {**self._metadata_registry, **self._db_metadata_registry}
-            raise SkillNotFoundError(
-                f"Skill '{name}' not found. Available skills: {list(available.keys())}"
-            )
-
-        if self._db_store is not None and name in self._db_metadata_registry:
-            skill = self._db_store.get_skill(name, app_name=self.config.app_name)
-            self._skill_cache[name] = skill
-            return skill
-
-        # Parse full skill
-        skill = parse_full(metadata.location)
-
-        # Cache for future use
+        source = self._resolve_source(name)
+        skill = source.load_skill(name)
         self._skill_cache[name] = skill
-
         return skill
 
     def has_skill(self, name: str) -> bool:
-        """Check if skill exists in registry.
+        """Check if any source provides ``name``.
 
-        Args:
-            name: Skill name
-
-        Returns:
-            True if skill exists
+        Note:
+            Returns ``True`` even when multiple sources provide the same name;
+            call :meth:`load_skill` (or :meth:`list_metadata`) to surface the
+            collision.
         """
-        if self._db_store is not None:
-            self._refresh_db_metadata()
-        return name in self._metadata_registry or name in self._db_metadata_registry
+        return any(source.has_skill(name) for source in self._sources)
+
+    # File / reference / script access --------------------------------------
+
+    def list_files(self, skill_name: str) -> list[SkillFile]:
+        """List the files belonging to ``skill_name``.
+
+        Delegates to the source that owns the skill. Sources that cannot
+        enumerate their files raise :class:`SkillExecutionError`.
+        """
+        source = self._resolve_source(skill_name)
+        try:
+            return source.list_files(skill_name)
+        except NotImplementedError as e:
+            raise SkillExecutionError(
+                f"Source '{source.name}' does not support listing skill files"
+            ) from e
+
+    def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
+        """Read a single file from ``skill_name`` via its owning source.
+
+        ``relative_path`` is interpreted relative to the skill root. The
+        returned :class:`SkillFile` has exactly one of ``text_content`` /
+        ``binary_content`` populated.
+        """
+        source = self._resolve_source(skill_name)
+        try:
+            return source.read_file(skill_name, relative_path)
+        except NotImplementedError as e:
+            raise SkillExecutionError(
+                f"Source '{source.name}' does not support reading skill files"
+            ) from e
+
+    def read_reference(self, skill_name: str, reference: str) -> ReferenceFile:
+        """Read a *text* reference file from the source that owns ``skill_name``.
+
+        ``reference`` is interpreted as a path relative to the skill root; a
+        bare filename (no ``/``) is resolved under ``references/`` for
+        backwards compatibility (see
+        :func:`adk_skills_agent.core.paths.normalize_skill_reference`).
+
+        The registry normalises the path, delegates to
+        :meth:`SkillSource.read_file` on the owning source, and enforces that
+        the payload is text. Binary files raise a :class:`SkillExecutionError`
+        suggesting :meth:`read_file` instead. Sources only need to implement
+        :meth:`SkillSource.read_file` — they never see reference-path
+        normalisation.
+        """
+        source = self._resolve_source(skill_name)
+        normalized = normalize_skill_reference(reference)
+
+        try:
+            file = source.read_file(skill_name, normalized)
+        except NotImplementedError as e:
+            raise SkillExecutionError(
+                f"Source '{source.name}' does not support reading references"
+            ) from e
+        except SkillExecutionError as e:
+            hint = self._format_available_hint(source, skill_name, normalized)
+            if hint and hint not in str(e):
+                raise SkillExecutionError(f"{e}{hint}") from e
+            raise
+
+        if file.text_content is None:
+            raise SkillExecutionError(
+                f"Reference '{reference}' in skill '{skill_name}' is not a text "
+                "file; use read_file() for binary assets."
+            )
+
+        return ReferenceFile(
+            content=file.text_content,
+            path=normalized,
+            filename=Path(normalized).name,
+        )
+
+    @staticmethod
+    def _format_available_hint(source: SkillSource, skill_name: str, normalized_path: str) -> str:
+        """Return ``" Available: [...]"`` listing sibling files, or ``""``.
+
+        Walks :meth:`SkillSource.list_files` and filters to entries sharing a
+        parent directory with ``normalized_path``. Silently returns ``""`` if
+        the source does not support ``list_files`` or the listing fails —
+        callers treat the hint as best-effort UX, never as a contract.
+        """
+        try:
+            files = source.list_files(skill_name)
+        except (NotImplementedError, SkillExecutionError, SkillNotFoundError):
+            return ""
+        parent = normalized_path.rsplit("/", 1)[0] if "/" in normalized_path else ""
+        siblings = sorted(
+            f.relative_path
+            for f in files
+            if (f.relative_path.rsplit("/", 1)[0] if "/" in f.relative_path else "") == parent
+        )
+        if not siblings:
+            return ""
+        return f" Available: {siblings}"
+
+    def run_script(
+        self,
+        skill_name: str,
+        script: str,
+        args: dict[str, Any] | None = None,
+        *,
+        timeout: int | None = None,
+    ) -> ScriptResult:
+        """Run a script from the source that owns ``skill_name``."""
+        source = self._resolve_source(skill_name)
+        effective_timeout = timeout if timeout is not None else self.config.script_timeout
+        try:
+            return source.run_script(skill_name, script, args, timeout=effective_timeout)
+        except NotImplementedError as e:
+            raise SkillExecutionError(
+                f"Source '{source.name}' does not support running scripts"
+            ) from e
+
+    # Cache / lifecycle ------------------------------------------------------
 
     def clear_cache(self) -> None:
-        """Clear the skill cache.
-
-        Useful for reloading skills that may have changed.
-        """
+        """Drop the registry's loaded-skill cache."""
         self._skill_cache.clear()
 
     def clear(self) -> None:
-        """Clear all discovered skills and cache."""
-        self._metadata_registry.clear()
-        self._db_metadata_registry.clear()
+        """Reset the registry's view of skills.
+
+        Clears the built-in filesystem source and the registry's cache. Any
+        additional sources registered via :meth:`add_source` are preserved —
+        clearing them would be destructive. Callers who want a full reset
+        should reconstruct the registry or remove custom sources explicitly.
+        """
+        self._filesystem_source.clear()
         self._skill_cache.clear()
 
     def __len__(self) -> int:
-        """Return number of discovered skills."""
-        if self._db_store is not None:
-            self._refresh_db_metadata()
-        # Merge to avoid double-counting skills in both registries
-        merged = {**self._metadata_registry, **self._db_metadata_registry}
-        return len(merged)
+        return len(self.list_metadata())
 
     def __contains__(self, name: str) -> bool:
-        """Check if skill exists (supports 'in' operator)."""
-        if self._db_store is not None:
-            self._refresh_db_metadata()
-        return name in self._metadata_registry or name in self._db_metadata_registry
+        return self.has_skill(name)
 
     def __repr__(self) -> str:
-        """String representation."""
-        return f"SkillsRegistry(skills={len(self._metadata_registry)})"
+        return f"SkillsRegistry(sources={[source.name for source in self._sources]})"
+
+    # Tool factories ---------------------------------------------------------
 
     def create_use_skill_tool(self, include_skills_listing: bool = True) -> Any:
         """Create ADK tool for skill activation.
 
-        The tool description includes an <available_skills> block listing
-        all discovered skills (when include_skills_listing=True). When called,
-        it loads and returns the full skill instructions.
+        The tool description includes an ``<available_skills>`` block listing
+        all discovered skills (when ``include_skills_listing=True``). When
+        called, the tool loads and returns the full skill instructions.
 
         Args:
-            include_skills_listing: Whether to include <available_skills> XML in
-                tool description (default: True). Set to False when using prompt
-                injection to avoid duplication.
+            include_skills_listing: Whether to include the ``<available_skills>``
+                XML in the tool description (default: True). Set to False when
+                using prompt injection to avoid duplication.
 
         Returns:
-            Callable tool function for use with ADK agents
-
-        Example:
-            >>> registry = SkillsRegistry()
-            >>> registry.discover(["./skills"])
-            >>>
-            >>> # Pattern 1: Tool-based (default)
-            >>> agent = Agent(
-            ...     name="assistant",
-            ...     model="gemini-2.5-flash",
-            ...     tools=[registry.create_use_skill_tool()]
-            ... )
-            >>>
-            >>> # Pattern 2: Prompt-based
-            >>> prompt = registry.to_prompt_xml()
-            >>> agent = Agent(
-            ...     instruction=f"You are helpful.\\n{prompt}",
-            ...     tools=[registry.create_use_skill_tool(include_skills_listing=False)]
-            ... )
+            Callable tool function for use with ADK agents.
         """
         from adk_skills_agent.tools.use_skill import create_use_skill_tool
 
         return create_use_skill_tool(self, include_skills_listing=include_skills_listing)
 
     def create_run_script_tool(self) -> Any:
-        """Create ADK tool for executing skill scripts.
-
-        Returns:
-            Callable tool function for script execution
-
-        Example:
-            >>> registry = SkillsRegistry()
-            >>> registry.discover(["./skills"])
-            >>> agent = Agent(
-            ...     name="assistant",
-            ...     model="gemini-2.5-flash",
-            ...     tools=[
-            ...         registry.create_use_skill_tool(),
-            ...         registry.create_run_script_tool(),
-            ...     ]
-            ... )
-        """
+        """Create ADK tool for executing skill scripts."""
         from adk_skills_agent.tools.run_script import create_run_script_tool
 
         return create_run_script_tool(self)
 
     def create_read_reference_tool(self) -> Any:
-        """Create ADK tool for reading skill reference files.
-
-        Returns:
-            Callable tool function for reading references
-
-        Example:
-            >>> registry = SkillsRegistry()
-            >>> registry.discover(["./skills"])
-            >>> agent = Agent(
-            ...     name="assistant",
-            ...     model="gemini-2.5-flash",
-            ...     tools=[
-            ...         registry.create_use_skill_tool(),
-            ...         registry.create_read_reference_tool(),
-            ...     ]
-            ... )
-        """
+        """Create ADK tool for reading skill reference files."""
         from adk_skills_agent.tools.read_reference import create_read_reference_tool
 
         return create_read_reference_tool(self)
 
-    # Prompt injection utilities
+    # Prompt injection utilities --------------------------------------------
 
     def to_prompt_xml(self) -> str:
-        """Generate XML representation of skills for system prompt injection.
-
-        Returns XML block listing all available skills with name and description.
-        This can be injected into an agent's system prompt to make skills
-        available without using tools.
-
-        Returns:
-            XML string with <available_skills> block
-
-        Example:
-            >>> registry = SkillsRegistry()
-            >>> registry.discover(["./skills"])
-            >>> prompt = registry.to_prompt_xml()
-            >>> print(prompt)
-            <available_skills>
-              <skill>
-                <name>calculator</name>
-                <description>Perform calculations</description>
-              </skill>
-            </available_skills>
-        """
+        """Generate XML representation of skills for prompt injection."""
         from adk_skills_agent.tools.use_skill import generate_available_skills_xml
 
         return generate_available_skills_xml(self)
 
     def to_prompt_text(self) -> str:
-        """Generate plain text representation of skills for system prompt injection.
-
-        Returns a human-readable list of available skills with descriptions.
-
-        Returns:
-            Plain text string listing skills
-
-        Example:
-            >>> registry = SkillsRegistry()
-            >>> registry.discover(["./skills"])
-            >>> print(registry.to_prompt_text())
-            Available Skills:
-            - calculator: Perform calculations
-            - hello-world: Simple greeting skill
-        """
+        """Generate plain-text representation of skills for prompt injection."""
         skills_metadata = self.list_metadata()
-
         if not skills_metadata:
             return "No skills available."
-
         lines = ["Available Skills:"]
         for metadata in skills_metadata:
             lines.append(f"- {metadata.name}: {metadata.description}")
-
         return "\n".join(lines)
 
     def get_skills_prompt(self, format: str = "xml") -> str:
-        """Get skills as formatted prompt text for injection.
-
-        Convenience method that supports multiple output formats.
+        """Return a formatted skills prompt.
 
         Args:
-            format: Output format - "xml" or "text" (default: "xml")
-
-        Returns:
-            Formatted string representation of skills
+            format: ``"xml"`` or ``"text"``.
 
         Raises:
-            ValueError: If format is not supported
-
-        Example:
-            >>> registry = SkillsRegistry()
-            >>> registry.discover(["./skills"])
-            >>> xml_prompt = registry.get_skills_prompt("xml")
-            >>> text_prompt = registry.get_skills_prompt("text")
+            ValueError: For any unsupported format.
         """
         if format == "xml":
             return self.to_prompt_xml()
-        elif format == "text":
+        if format == "text":
             return self.to_prompt_text()
-        else:
-            raise ValueError(f"Unsupported format: {format}. Use 'xml' or 'text'.")
+        raise ValueError(f"Unsupported format: {format}. Use 'xml' or 'text'.")
 
     def inject_skills_prompt(self, instruction: str, format: str = "xml") -> str:
-        """Inject skills listing into an instruction/system prompt.
+        """Inject the skills listing into ``instruction``.
 
-        This method appends the skills listing to the provided instruction string,
-        using the skills already discovered in this registry instance. This is more
-        efficient than the standalone helper when you already have a registry.
-
-        Args:
-            instruction: Base instruction/system prompt
-            format: Output format - "xml" or "text" (default: "xml")
-
-        Returns:
-            Instruction with skills listing appended, or unchanged if no skills
-
-        Example:
-            >>> registry = SkillsRegistry()
-            >>> registry.discover(["./skills"])
-            >>> instruction = "You are a helpful assistant."
-            >>> full_instruction = registry.inject_skills_prompt(instruction, format="xml")
-            >>> print(full_instruction)
-            You are a helpful assistant.
-
-            <available_skills>
-            ...
-            </available_skills>
+        Returns ``instruction`` unchanged when no skills are known.
         """
         if len(self) == 0:
             return instruction
-
         skills_prompt = self.get_skills_prompt(format=format)
         return f"{instruction}\n\n{skills_prompt}"
 
-    # Validation utilities
+    # Validation utilities --------------------------------------------------
 
     def validate_all(self, strict: bool = True) -> dict[str, ValidationResult]:
-        """Validate all discovered skills.
-
-        Runs validation on all skills in the registry and returns results.
-
-        Args:
-            strict: If True, enforce strict validation (warnings for missing optional fields)
-
-        Returns:
-            Dictionary mapping skill names to ValidationResult objects
-
-        Example:
-            >>> registry = SkillsRegistry()
-            >>> registry.discover(["./skills"])
-            >>> results = registry.validate_all(strict=True)
-            >>> for name, result in results.items():
-            ...     if not result.valid:
-            ...         print(f"{name}: {result.errors}")
-        """
-        results = {}
+        """Validate every known skill and return a per-name result map."""
+        results: dict[str, ValidationResult] = {}
         for metadata in self.list_metadata():
             results[metadata.name] = validate_skill_metadata(metadata, strict=strict)
         return results
@@ -426,209 +428,48 @@ class SkillsRegistry:
     def validate_skill_by_name(self, name: str, strict: bool = True) -> ValidationResult:
         """Validate a specific skill by name.
 
-        Args:
-            name: Skill name to validate
-            strict: If True, enforce strict validation
-
-        Returns:
-            ValidationResult for the skill
-
         Raises:
-            SkillNotFoundError: If skill not found
-
-        Example:
-            >>> registry = SkillsRegistry()
-            >>> registry.discover(["./skills"])
-            >>> result = registry.validate_skill_by_name("calculator")
-            >>> if result.valid:
-            ...     print("Skill is valid!")
+            SkillNotFoundError: If the skill is not known to any source.
         """
         metadata = self.get_metadata(name)
         if metadata is None:
-            available = {**self._metadata_registry, **self._db_metadata_registry}
             raise SkillNotFoundError(
-                f"Skill '{name}' not found. Available skills: {list(available.keys())}"
+                f"Skill '{name}' not found. "
+                f"Available skills: {[m.name for m in self.list_metadata()]}"
             )
         return validate_skill_metadata(metadata, strict=strict)
 
-    def _refresh_db_metadata(self) -> None:
-        if self._db_store is None:
-            return
-        db_metadata = self._db_store.list_metadata(app_name=self.config.app_name)
-        self._db_metadata_registry = {metadata.name: metadata for metadata in db_metadata}
+    # Internals --------------------------------------------------------------
 
-    # Database operations
-
-    def save_skill_to_db(self, skill: Skill, version: Optional[int] = None) -> None:
-        """Save a skill to the database.
-
-        Requires db_enabled=True in config.
-
-        Args:
-            skill: The skill to save
-            version: Optional version number (auto-increments if None)
+    def _resolve_source(self, name: str) -> SkillSource:
+        """Return the single source that provides ``name``.
 
         Raises:
-            RuntimeError: If database is not enabled
-
-        Example:
-            >>> registry = SkillsRegistry(config=SkillsConfig(
-            ...     db_enabled=True, db_session=session
-            ... ))
-            >>> skill = registry.load_skill("my-skill")
-            >>> registry.save_skill_to_db(skill)
+            SkillNotFoundError: When no source claims ``name``.
+            SkillSourceCollisionError: When two or more sources provide the
+                skill.
         """
-        if self._db_store is None:
-            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
-
-        self._db_store.save_skill(skill, app_name=self.config.app_name, version=version)
-        self._refresh_db_metadata()
-        # Invalidate cache for this skill
-        self._skill_cache.pop(skill.name, None)
-
-    def delete_skill_from_db(self, name: str, version: Optional[int] = None) -> int:
-        """Delete a skill from the database.
-
-        Args:
-            name: Name of the skill to delete
-            version: If specified, deletes only that version.
-                    If None, deletes all versions.
-
-        Returns:
-            Number of records deleted
-
-        Raises:
-            RuntimeError: If database is not enabled
-
-        Example:
-            >>> registry.delete_skill_from_db("old-skill")  # Delete all versions
-            >>> registry.delete_skill_from_db("my-skill", version=1)  # Delete v1 only
-        """
-        if self._db_store is None:
-            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
-
-        count = self._db_store.delete_skill(name, app_name=self.config.app_name, version=version)
-        self._refresh_db_metadata()
-        # Invalidate cache for this skill
-        self._skill_cache.pop(name, None)
-        return count
-
-    def import_skill_to_db(self, name: str) -> None:
-        """Import a file-based skill into the database.
-
-        Loads the skill from file and saves it to the database,
-        creating a new version.
-
-        Args:
-            name: Name of the file-based skill to import
-
-        Raises:
-            RuntimeError: If database is not enabled
-            SkillNotFoundError: If skill not found in file registry
-
-        Example:
-            >>> registry = SkillsRegistry(config=SkillsConfig(
-            ...     db_enabled=True, db_session=session
-            ... ))
-            >>> registry.discover(["./skills"])
-            >>> registry.import_skill_to_db("my-skill")  # Now in DB
-        """
-        if self._db_store is None:
-            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
-
-        if name not in self._metadata_registry:
+        source = self._find_source(name)
+        if source is None:
             raise SkillNotFoundError(
-                f"Skill '{name}' not found in file registry. "
-                f"Available: {list(self._metadata_registry.keys())}"
+                f"Skill '{name}' not found. "
+                f"Available skills: {[m.name for m in self.list_metadata()]}"
             )
+        return source
 
-        # Load from file
-        metadata = self._metadata_registry[name]
-        skill = parse_full(metadata.location)
-
-        # Save to DB
-        self._db_store.import_skill(skill, app_name=self.config.app_name)
-        self._refresh_db_metadata()
-
-    def import_all_to_db(self, skip_existing: bool = True) -> int:
-        """Import all file-based skills into the database.
-
-        Bulk imports all skills from the file registry to the database.
-        Useful for migrating from file-based to database-backed storage.
-
-        This operation is atomic - either all skills are imported successfully,
-        or none are (the transaction is rolled back on error).
-
-        Args:
-            skip_existing: If True (default), skips skills that already exist
-                          in the database. If False, creates new versions.
-
-        Returns:
-            Number of skills imported
+    def _find_source(self, name: str) -> SkillSource | None:
+        """Return the source that provides ``name`` or ``None`` if unknown.
 
         Raises:
-            RuntimeError: If database is not enabled
-            Exception: Re-raises any exception after rolling back transaction
-
-        Example:
-            >>> registry = SkillsRegistry(config=SkillsConfig(
-            ...     db_enabled=True, db_session=session
-            ... ))
-            >>> registry.discover(["./skills"])
-            >>> count = registry.import_all_to_db()
-            >>> print(f"Imported {count} skills to database")
+            SkillSourceCollisionError: When two or more sources provide the
+                skill.
         """
-        if self._db_store is None:
-            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
-
-        # Load all skills from files first
-        skills = [parse_full(metadata.location) for metadata in self._metadata_registry.values()]
-
-        # Use bulk import for atomicity
-        imported = self._db_store.import_skills_bulk(
-            skills,
-            app_name=self.config.app_name,
-            skip_existing=skip_existing,
-        )
-
-        self._refresh_db_metadata()
-        return imported
-
-    def list_skill_versions(self, name: str) -> list[int]:
-        """List all versions of a skill in the database.
-
-        Args:
-            name: Skill name
-
-        Returns:
-            List of version numbers in ascending order
-
-        Raises:
-            RuntimeError: If database is not enabled
-
-        Example:
-            >>> versions = registry.list_skill_versions("my-skill")
-            >>> print(versions)  # [1, 2, 3]
-        """
-        if self._db_store is None:
-            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
-
-        return self._db_store.list_versions(name, app_name=self.config.app_name)
-
-    def skill_exists_in_db(self, name: str, version: Optional[int] = None) -> bool:
-        """Check if a skill exists in the database.
-
-        Args:
-            name: Skill name to check
-            version: Optional specific version to check
-
-        Returns:
-            True if skill exists in database
-
-        Raises:
-            RuntimeError: If database is not enabled
-        """
-        if self._db_store is None:
-            raise RuntimeError("Database not enabled. Set db_enabled=True in SkillsConfig.")
-
-        return self._db_store.skill_exists(name, app_name=self.config.app_name, version=version)
+        owners = [source for source in self._sources if source.has_skill(name)]
+        if not owners:
+            return None
+        if len(owners) > 1:
+            names = [source.name for source in owners]
+            raise SkillSourceCollisionError(
+                f"Skill '{name}' is provided by multiple sources: {names}"
+            )
+        return owners[0]

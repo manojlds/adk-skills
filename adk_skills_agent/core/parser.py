@@ -9,20 +9,20 @@ from adk_skills_agent.utils.yaml_parser import parse_frontmatter
 
 
 def find_skill_md(skill_dir: Path) -> Optional[Path]:
-    """Find the SKILL.md file in a skill directory.
+    """Find the ``SKILL.md`` file in a skill directory.
 
-    Prefers SKILL.md (uppercase) but accepts skill.md (lowercase).
+    The agentskills.io specification mandates the uppercase filename
+    ``SKILL.md``; lowercase ``skill.md`` is not accepted.
 
     Args:
         skill_dir: Path to the skill directory
 
     Returns:
-        Path to the SKILL.md file, or None if not found
+        Path to the ``SKILL.md`` file, or ``None`` if not found.
     """
-    for name in ("SKILL.md", "skill.md"):
-        path = skill_dir / name
-        if path.exists() and path.is_file():
-            return path
+    path = skill_dir / "SKILL.md"
+    if path.exists() and path.is_file():
+        return path
     return None
 
 

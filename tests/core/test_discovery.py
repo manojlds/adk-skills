@@ -103,61 +103,6 @@ Nested skill instructions.
     assert result[0].name == "nested-skill"
 
 
-def test_discover_lowercase_skill_md(tmp_path):
-    """Test discovery of skill.md (lowercase) files."""
-    skill_dir = tmp_path / "lowercase-skill"
-    skill_dir.mkdir()
-
-    # Use lowercase skill.md instead of SKILL.md
-    (skill_dir / "skill.md").write_text(
-        """---
-name: lowercase-skill
-description: Skill with lowercase filename
----
-
-Instructions.
-"""
-    )
-
-    result = discover_skills([tmp_path])
-
-    assert len(result) == 1
-    assert result[0].name == "lowercase-skill"
-
-
-def test_discover_prefers_uppercase_skill_md(tmp_path):
-    """Test that SKILL.md is preferred over skill.md."""
-    skill_dir = tmp_path / "both-files"
-    skill_dir.mkdir()
-
-    # Create both uppercase and lowercase
-    (skill_dir / "SKILL.md").write_text(
-        """---
-name: uppercase-skill
-description: From SKILL.md
----
-
-Uppercase.
-"""
-    )
-
-    (skill_dir / "skill.md").write_text(
-        """---
-name: lowercase-skill
-description: From skill.md
----
-
-Lowercase.
-"""
-    )
-
-    result = discover_skills([tmp_path])
-
-    # Should only find one skill (uppercase preferred)
-    assert len(result) == 1
-    assert result[0].name == "uppercase-skill"
-
-
 def test_discover_multiple_directories(tmp_path):
     """Test discovery from multiple directories."""
     dir1 = tmp_path / "dir1"
