@@ -13,9 +13,7 @@ from pathlib import Path
 from adk_skills_agent import (
     SkillsAgent,
     SkillsRegistry,
-    create_skills_agent,
     inject_skills_prompt,
-    with_skills,
 )
 
 
@@ -169,9 +167,7 @@ def demo_helper_functions() -> None:
     )
 
     # Or via registry method (more direct)
-    full_instruction_method = registry.inject_skills_prompt(
-        base_instruction, format="text"
-    )
+    full_instruction_method = registry.inject_skills_prompt(base_instruction, format="text")
 
     print("Both patterns produce identical results:")
     print(f"  Helper function: {len(full_instruction_helper)} chars")
@@ -214,7 +210,7 @@ def demo_integration_patterns() -> None:
     print("=" * 60)
     print()
 
-    skills_dir = Path(__file__).parent / "skills"
+    Path(__file__).parent / "skills"
 
     print("Pattern 1: Tool-based (Default)")
     print("-" * 60)
