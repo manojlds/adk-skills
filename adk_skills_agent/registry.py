@@ -313,7 +313,11 @@ class SkillsRegistry:
         self._skill_cache.clear()
 
     def __len__(self) -> int:
-        return len(self.list_metadata())
+        names: set[str] = set()
+        for source in self._sources:
+            for metadata in source.list_metadata():
+                names.add(metadata.name)
+        return len(names)
 
     def __contains__(self, name: str) -> bool:
         return self.has_skill(name)

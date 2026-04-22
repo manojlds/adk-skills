@@ -128,7 +128,15 @@ class FilesystemSkillSource(SkillSource):
             if candidate.name == ".DS_Store":
                 continue
 
-            rel = candidate.resolve().relative_to(skill_dir)
+            try:
+                resolved = candidate.resolve()
+            except OSError:
+                continue
+            try:
+                rel = resolved.relative_to(skill_dir)
+            except ValueError:
+                # Ignore symlinks/files that resolve outside the skill root.
+                continue
             try:
                 stat = candidate.stat()
             except OSError:
