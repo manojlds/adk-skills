@@ -1,16 +1,12 @@
 review:
   default:
-    model: opencode/glm-4.7-free
+    model: opencode-go/glm-5.1
 
   mode: unified
 
   agents:
-    - security
-    - quality
-    - style
-    - performance
-    - documentation
-
+  - unified-reviewer
+  
   unified:
     severityThreshold: HIGH
 
@@ -23,23 +19,24 @@ review:
     - "**/__tests__/**"
     - "**/mocks/**"
     - "**/__mocks__/**"
-    - "poetry.lock"
-    - "Pipfile.lock"
+    - "uv.lock"
     - "requirements*.txt"
     - "**/*.egg-info/**"
     - "**/dist/**"
     - "**/build/**"
+    - "**/examples/**"
 
   describe:
     enabled: true
     postDescription: true
 
 describe:
-  model: opencode/glm-4.7-free
+  model: opencode-go/glm-5.1
   includeProjectContext: true
 
 contextCompression:
   enabled: true
+  thresholdPercent: 0.15
   maxTokens: 32000
   softBufferTokens: 1500
   hardBufferTokens: 1000
