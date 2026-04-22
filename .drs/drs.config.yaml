@@ -1,6 +1,6 @@
 review:
   default:
-    model: opencode-go/glm-5.1
+    model: opencode-go/glm-5
 
   mode: unified
 
@@ -31,7 +31,7 @@ review:
     postDescription: true
 
 describe:
-  model: opencode-go/glm-5.1
+  model: opencode-go/glm-5
   includeProjectContext: true
 
 contextCompression:
