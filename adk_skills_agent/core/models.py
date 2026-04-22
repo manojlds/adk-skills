@@ -139,18 +139,12 @@ class SkillsConfig:
     Attributes:
         skills_directories: List of directories to scan for skills
         auto_discover: Automatically discover skills on initialization
-        enable_scripts: Allow script execution
-        script_timeout: Maximum script execution time in seconds
-        sandbox_mode: Run scripts in sandboxed environment
         strict_validation: Enforce strict spec validation
         allow_experimental: Allow experimental features (e.g., allowed-tools)
     """
 
     skills_directories: list[Path] = field(default_factory=list)
     auto_discover: bool = True
-    enable_scripts: bool = True
-    script_timeout: int = 30
-    sandbox_mode: bool = True
     strict_validation: bool = True
     allow_experimental: bool = False
 

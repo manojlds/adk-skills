@@ -22,7 +22,7 @@ __version__ = "0.2.0"
 from .agent import SkillsAgent
 from .core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
 from .core.paths import normalize_skill_reference, validate_skill_root_relative_path
-from .core.source import ReferenceFile, ScriptResult, SkillFile, SkillSource
+from .core.source import ReferenceFile, SkillFile, SkillSource
 from .core.validator import validate_skill
 from .exceptions import (
     SkillConfigError,
@@ -48,7 +48,6 @@ __all__ = [
     # Source abstraction
     "SkillSource",
     "ReferenceFile",
-    "ScriptResult",
     "SkillFile",
     "FilesystemSkillSource",
     # Path helpers for custom source authors

@@ -163,30 +163,6 @@ Instructions.
         )
 
         tools = agent.get_tools()
-        assert len(tools) == 3  # use_skill, run_script, read_reference
-
-    def test_get_tools_without_script_tool(self, tmp_path):
-        """Test getting tools without script tool."""
-        skill_dir = tmp_path / "my-skill"
-        skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(
-            """---
-name: my-skill
-description: A test skill
----
-
-Instructions.
-"""
-        )
-
-        agent = SkillsAgent(
-            name="test-agent",
-            model="gemini-2.5-flash",
-            skills_directories=[tmp_path],
-            include_script_tool=False,
-        )
-
-        tools = agent.get_tools()
         assert len(tools) == 2  # use_skill, read_reference
 
     def test_get_tools_without_reference_tool(self, tmp_path):
@@ -211,14 +187,13 @@ Instructions.
         )
 
         tools = agent.get_tools()
-        assert len(tools) == 2  # use_skill, run_script
+        assert len(tools) == 1  # use_skill
 
     def test_get_tools_minimal(self):
         """Test getting tools with minimal tools."""
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
-            include_script_tool=False,
             include_reference_tool=False,
         )
 

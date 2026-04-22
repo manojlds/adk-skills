@@ -47,7 +47,6 @@ class SkillsAgent:
         instruction: str = "",
         skills_directories: Optional[Sequence[Union[str, Path]]] = None,
         skills_config: Optional[SkillsConfig] = None,
-        include_script_tool: bool = True,
         include_reference_tool: bool = True,
         validate_skills: bool = True,
         auto_inject_prompt: bool = False,
@@ -62,7 +61,6 @@ class SkillsAgent:
             instruction: System instruction/prompt for the agent
             skills_directories: Directories to discover skills from
             skills_config: Optional SkillsConfig for customization
-            include_script_tool: Include run_script tool (default: True)
             include_reference_tool: Include read_reference tool (default: True)
             validate_skills: Validate skills on discovery (default: True)
             auto_inject_prompt: Inject skills into system prompt (default: False)
@@ -82,7 +80,6 @@ class SkillsAgent:
         self.model = model
         self.instruction = instruction
         self.skills_directories = skills_directories or []
-        self.include_script_tool = include_script_tool
         self.include_reference_tool = include_reference_tool
         self.validate_skills = validate_skills
         self.auto_inject_prompt = auto_inject_prompt
@@ -132,7 +129,7 @@ class SkillsAgent:
         the <available_skills> listing in its description to avoid duplication.
 
         Returns:
-            List of tool functions (use_skill, run_script, read_reference)
+            List of tool functions (use_skill, read_reference)
 
         Example:
             >>> agent = SkillsAgent(name="assistant", model="gemini-2.5-flash")
@@ -143,9 +140,6 @@ class SkillsAgent:
         include_listing = not self.auto_inject_prompt
 
         tools = [self.registry.create_use_skill_tool(include_skills_listing=include_listing)]
-
-        if self.include_script_tool:
-            tools.append(self.registry.create_run_script_tool())
 
         if self.include_reference_tool:
             tools.append(self.registry.create_read_reference_tool())

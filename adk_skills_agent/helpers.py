@@ -16,7 +16,6 @@ def with_skills(
     agent: Any,
     directories: Sequence[Union[str, Path]],
     config: Optional[SkillsConfig] = None,
-    include_script_tool: bool = True,
     include_reference_tool: bool = True,
 ) -> Any:
     """Add skills support to an existing ADK agent.
@@ -30,7 +29,6 @@ def with_skills(
         agent: Existing google.adk.agents.Agent instance
         directories: List of directories to discover skills from
         config: Optional SkillsConfig for customization
-        include_script_tool: Include run_script tool (default: True)
         include_reference_tool: Include read_reference tool (default: True)
 
     Returns:
@@ -61,9 +59,6 @@ def with_skills(
 
     # Create tools
     tools = [registry.create_use_skill_tool()]
-
-    if include_script_tool:
-        tools.append(registry.create_run_script_tool())
 
     if include_reference_tool:
         tools.append(registry.create_read_reference_tool())

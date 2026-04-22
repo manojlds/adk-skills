@@ -8,16 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
-import subprocess
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 from adk_skills_agent.core.discovery import discover_skills
 from adk_skills_agent.core.models import Skill, SkillMetadata
 from adk_skills_agent.core.parser import parse_full
 from adk_skills_agent.core.paths import validate_skill_root_relative_path
-from adk_skills_agent.core.source import ScriptResult, SkillFile, SkillSource
+from adk_skills_agent.core.source import SkillFile, SkillSource
 from adk_skills_agent.core.validator import validate_skill_metadata
 from adk_skills_agent.exceptions import SkillExecutionError, SkillNotFoundError
 
@@ -40,7 +38,6 @@ class FilesystemSkillSource(SkillSource):
         directories: Sequence[str | Path] | None = None,
         *,
         strict_validation: bool = True,
-        script_timeout: int = 30,
     ):
         """Construct a filesystem source.
 
@@ -51,14 +48,11 @@ class FilesystemSkillSource(SkillSource):
             strict_validation: When ``True``, invalid skills are silently
                 dropped during discovery (matches the legacy registry
                 behaviour).
-            script_timeout: Default timeout (in seconds) applied to
-                :meth:`run_script` when the caller does not override it.
         """
         self._directories: list[Path] = []
         self._metadata: dict[str, SkillMetadata] = {}
         self._skill_cache: dict[str, Skill] = {}
         self._strict_validation = strict_validation
-        self._script_timeout = script_timeout
 
         if directories:
             self.add_directories(directories)
@@ -206,59 +200,6 @@ class FilesystemSkillSource(SkillSource):
                 f"Access denied: path escapes skill directory: {relative_path!r}"
             )
         return target_resolved
-
-    def run_script(
-        self,
-        skill_name: str,
-        script: str,
-        args: dict[str, Any] | None = None,
-        *,
-        timeout: int | None = None,
-    ) -> ScriptResult:
-        effective_timeout = timeout if timeout is not None else self._script_timeout
-
-        try:
-            skill_obj = self.load_skill(skill_name)
-        except SkillNotFoundError as e:
-            raise SkillNotFoundError(
-                f"Skill '{skill_name}' not found. Cannot execute script."
-            ) from e
-
-        if skill_obj.scripts_dir is None:
-            raise SkillExecutionError(f"Skill '{skill_name}' has no scripts/ directory")
-
-        script_path = skill_obj.scripts_dir / script
-        if not script_path.exists():
-            available = list(skill_obj.scripts_dir.glob("*"))
-            raise SkillExecutionError(
-                f"Script '{script}' not found in skill '{skill_name}'. "
-                f"Available scripts: {[s.name for s in available]}"
-            )
-
-        if not script_path.is_file():
-            raise SkillExecutionError(f"Script '{script}' is not a file")
-
-        try:
-            result = subprocess.run(
-                [str(script_path)],
-                capture_output=True,
-                text=True,
-                timeout=effective_timeout,
-                cwd=skill_obj.skill_dir,
-            )
-        except subprocess.TimeoutExpired as e:
-            raise SkillExecutionError(
-                f"Script '{script}' timed out after {effective_timeout} seconds"
-            ) from e
-        except Exception as e:
-            raise SkillExecutionError(f"Failed to execute script '{script}': {e}") from e
-
-        return ScriptResult(
-            stdout=result.stdout,
-            stderr=result.stderr,
-            returncode=result.returncode,
-            success=result.returncode == 0,
-        )
 
     def clear_cache(self) -> None:
         """Drop any cached fully-loaded skills."""

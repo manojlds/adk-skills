@@ -43,7 +43,7 @@ agent = Agent(
     instruction="You are a helpful assistant.",
     tools=[
         registry.create_use_skill_tool(),      # Loads skills on-demand
-        registry.create_run_script_tool(),     # Optional: run skill scripts
+        registry.create_read_reference_tool(), # Optional: read reference files
     ]
 )
 
@@ -56,9 +56,7 @@ agent = Agent(
 - 📦 **On-Demand Loading**: Skills activated only when needed (~50-100 tokens per skill)
 - 🔌 **Pluggable Skill Sources**: Plug the built-in filesystem source alongside your own sources (database, remote registry, object storage, …) through a single `SkillSource` interface
 - 📁 **Multi-file Skill Packages**: Read `SKILL.md`, references, and binary assets from any backend via the generic `list_files` / `read_file` API
-- 🔧 **Script Execution**: Execute Python and Bash scripts from skills
 - 🚀 **Simple Integration**: Tool-based pattern following OpenCode's approach
-- 🔒 **Secure by default**: Script execution uses explicit activation and timeouts
 - 🤖 **Custom Agent Class**: `SkillsAgent` for easy agent creation with built-in skills support
 - 💉 **Prompt Injection**: Inject skills directly into system prompts (XML or text format)
 - ✅ **Validation**: Validate skills against the agentskills.io specification
@@ -159,7 +157,7 @@ agent = Agent(
     model="gemini-2.5-flash",
     tools=[
         registry.create_use_skill_tool(),    # <available_skills> in description
-        registry.create_run_script_tool(),
+        registry.create_read_reference_tool(),
     ]
 )
 
@@ -231,7 +229,7 @@ agent = Agent(
 Starting in `0.2.0`, `SkillsRegistry` is composed of one or more **skill
 sources**. A source is anything that implements the `SkillSource` abstract
 base class and knows how to list metadata, load a full skill, and
-(optionally) expose the files that back a skill package or run scripts.
+(optionally) expose the files that back a skill package.
 
 The registry ships with one built-in source:
 
@@ -293,13 +291,12 @@ Each source owns its own storage and decides which capabilities it can offer:
 | `has_skill(name)` | Optional | Default falls back to `list_metadata`; override for a cheap existence check. |
 | `list_files(skill_name)` | Optional | Needed whenever your source stores more than the prompt. |
 | `read_file(skill_name, path)` | Optional | Single file I/O primitive for the registry. |
-| `run_script(...)` | Optional | Only sources that can materialise scripts on disk. |
 
 Sources that cannot honour an optional capability should leave the default in
 place; the registry converts the resulting `NotImplementedError` into a
 `SkillExecutionError` with a clear "source does not support …" message. For
 example, a prompt-only database source that does not implement `list_files`
-/ `read_file` / `run_script` will cause any call that needs them to fail
+/ `read_file` will cause any call that needs them to fail
 cleanly rather than silently.
 
 #### Reference reads are a registry-level concern
@@ -417,7 +414,6 @@ agent = SkillsAgent(
     auto_inject_prompt=True,  # Inject skills into prompt
     prompt_format="xml",       # or "text"
     validate_skills=True,      # Validate on discovery
-    include_script_tool=True,
     include_reference_tool=True,
 )
 
@@ -503,7 +499,7 @@ agent = Agent(
     instruction="You are helpful.",  # NO skills in prompt
     tools=[
         registry.create_use_skill_tool(),  # <available_skills> in tool description
-        registry.create_run_script_tool(),
+        registry.create_read_reference_tool(),
     ]
 )
 ```
@@ -521,7 +517,7 @@ agent = Agent(
     instruction=f"You are helpful.\n\n{prompt}",  # Skills in prompt
     tools=[
         registry.create_use_skill_tool(include_skills_listing=False),  # No XML
-        registry.create_run_script_tool(),
+        registry.create_read_reference_tool(),
     ]
 )
 
@@ -544,7 +540,7 @@ agent = SkillsAgent(
 - [x] Skills discovery and registry
 - [x] Validation system
 - [x] `use_skill` tool for activation
-- [x] `run_script` and `read_reference` tools
+- [x] `read_reference` tool
 - [x] Working examples
 - [x] 90%+ test coverage (129 tests passing)
 - [ ] Advanced executors and sandboxing

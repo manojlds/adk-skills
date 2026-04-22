@@ -1,13 +1,12 @@
 # DRS Project Context
 
 ## Architecture
-ADK Skills is a Python library that lets Google ADK agents discover, load, and use skills that follow the Agent Skills standard. The library focuses on safe discovery, metadata validation, and optional script execution for skills.
+ADK Skills is a Python library that lets Google ADK agents discover, load, and use skills that follow the Agent Skills standard. The library focuses on safe discovery, metadata validation, and tool-based skill activation.
 
 ### Key Components
 - **SkillsRegistry**: Discovers skills on disk, validates metadata, and exposes helpers to load skills on demand.
 - **SkillsAgent**: Convenience agent wrapper that wires skills into an ADK agent.
-- **Tools**: `use_skill` and `run_script` tools for skill activation and optional script execution.
-- **Executors**: Sandboxed Python/Bash execution with timeouts and resource limits.
+- **Tools**: `use_skill` and `read_reference` tools for skill activation and reference access.
 - **Validation & Helpers**: Pydantic-based validation and utilities for prompt injection or registry setup.
 
 ## Technology Stack
@@ -37,11 +36,9 @@ ADK Skills is a Python library that lets Google ADK agents discover, load, and u
 ### Standard Practices (NOT Security Issues)
 - ✅ Reading skills from local directories
 - ✅ YAML/Markdown parsing with validation
-- ✅ Running scripts through the provided sandbox and timeouts
 - ✅ Tool descriptions listing available skills
 
 ### What Actually Matters
-- Script execution safety (timeouts, sandboxing, resource limits)
 - Path traversal or unexpected file access when discovering skills
 - Leaking secrets in logs or exceptions
 - Validation gaps that allow malformed skill metadata or scripts
@@ -50,7 +47,6 @@ ADK Skills is a Python library that lets Google ADK agents discover, load, and u
 
 ### Focus Areas
 - Correctness of skill discovery/validation
-- Safe script execution defaults
 - Clear error handling and user-facing messages
 - Type safety and consistent Pydantic models
 - Performance for large skill registries

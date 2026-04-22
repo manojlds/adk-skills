@@ -155,9 +155,6 @@ class TestSkillsConfig:
 
         assert config.skills_directories == []
         assert config.auto_discover is True
-        assert config.enable_scripts is True
-        assert config.script_timeout == 30
-        assert config.sandbox_mode is True
         assert config.strict_validation is True
         assert config.allow_experimental is False
 
@@ -166,13 +163,11 @@ class TestSkillsConfig:
         config = SkillsConfig(
             skills_directories=[Path("./skills")],
             auto_discover=False,
-            script_timeout=60,
             allow_experimental=True,
         )
 
         assert config.skills_directories == [Path("./skills")]
         assert config.auto_discover is False
-        assert config.script_timeout == 60
         assert config.allow_experimental is True
 
 
