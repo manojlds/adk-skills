@@ -40,9 +40,9 @@ def create_read_reference_tool(
             Dict containing:
 
             - ``content``: Contents of the reference file.
-            - ``path``: Opaque locator for the reference. For filesystem-backed
-              skills this is the absolute path on disk; for other sources it
-              may be a source-specific identifier.
+            - ``path``: Skill-root-relative path for the reference
+              (for example, ``"references/guide.md"``), consistent across
+              all source types.
             - ``filename``: Base filename of the reference.
 
         Raises:

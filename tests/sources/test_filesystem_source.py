@@ -243,6 +243,27 @@ class TestFilesystemSourceFiles:
         paths = {f.relative_path for f in files}
         assert paths == {"SKILL.md"}
 
+    def test_list_files_skips_entries_resolving_outside_skill(self, tmp_path: Path) -> None:
+        skill_dir = _write_skill(tmp_path, "pkg")
+        assets = skill_dir / "assets"
+        assets.mkdir()
+        (assets / "template.json").write_text('{"a": 1}')
+
+        outside = tmp_path / "outside.txt"
+        outside.write_text("secret")
+        escaped_link = assets / "escape-link.txt"
+        try:
+            escaped_link.symlink_to(outside)
+        except (NotImplementedError, OSError):
+            pytest.skip("symlinks are not supported in this environment")
+
+        source = FilesystemSkillSource([tmp_path])
+        files = source.list_files("pkg")
+        paths = {f.relative_path for f in files}
+
+        assert "assets/template.json" in paths
+        assert "assets/escape-link.txt" not in paths
+
     def test_list_files_raises_for_unknown_skill(self, tmp_path: Path) -> None:
         source = FilesystemSkillSource([tmp_path])
         with pytest.raises(SkillNotFoundError):

@@ -158,6 +158,14 @@ class TestCollisionDetection:
         assert "filesystem" in msg
         assert "memory" in msg
 
+    def test_len_tolerates_collision(self, tmp_path: Path, memory_skill: Skill) -> None:
+        _write_skill(tmp_path, "memory-one")
+        registry = SkillsRegistry()
+        registry.discover([tmp_path])
+        registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
+
+        assert len(registry) == 1
+
 
 class TestRouting:
     def test_read_reference_routes_to_owning_source(self, memory_skill: Skill) -> None:
