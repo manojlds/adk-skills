@@ -223,7 +223,7 @@ def demo_integration_patterns() -> None:
     print("      model='gemini-2.5-flash',")
     print("      tools=[")
     print("          registry.create_use_skill_tool(),")
-    print("          registry.create_run_script_tool(),")
+    print("          registry.create_read_reference_tool(),")
     print("      ]")
     print("  )")
     print()

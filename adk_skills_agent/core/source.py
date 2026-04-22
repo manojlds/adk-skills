@@ -18,11 +18,11 @@ subclassing this abstract base class and plugging into a registry via
 worked multi-file SQLite-backed source.
 
 Note:
-    Not every source supports every capability. Scripts require an actual
-    filesystem, and file access may or may not be available depending on how
-    the source stores auxiliary content. Sources that cannot honour a
-    capability should raise :class:`NotImplementedError` from the relevant
-    method; the registry converts this into a
+    Not every source supports every capability. File access may or may not be
+    available depending on how the source stores auxiliary content. Sources
+    that cannot honour a capability should raise
+    :class:`NotImplementedError` from the relevant method; the registry converts
+    this into a
     :class:`~adk_skills_agent.exceptions.SkillExecutionError` with a helpful
     message. ``read_reference`` is implemented once at the registry level on
     top of :meth:`SkillSource.read_file`, so sources that store files never
@@ -33,7 +33,6 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass
-from typing import Any
 
 from adk_skills_agent.core.models import Skill, SkillMetadata
 
@@ -102,32 +101,14 @@ class SkillFile:
         return self.binary_content is not None
 
 
-@dataclass
-class ScriptResult:
-    """Outcome of executing a script belonging to a skill.
-
-    Attributes:
-        stdout: Captured standard output (decoded as UTF-8).
-        stderr: Captured standard error (decoded as UTF-8).
-        returncode: Process exit code.
-        success: Convenience flag, equivalent to ``returncode == 0``.
-    """
-
-    stdout: str
-    stderr: str
-    returncode: int
-    success: bool
-
-
 class SkillSource(abc.ABC):
     """Abstract base class for pluggable skill sources.
 
     Subclasses must implement :meth:`list_metadata` and :meth:`load_skill`.
     Override :meth:`has_skill` for efficiency when the default linear scan is
-    too expensive. :meth:`list_files`, :meth:`read_file`, and
-    :meth:`run_script` are optional; the defaults raise
-    :class:`NotImplementedError` so that the registry can surface a clear
-    error to callers.
+    too expensive. :meth:`list_files` and :meth:`read_file` are optional; the
+    defaults raise :class:`NotImplementedError` so that the registry can
+    surface a clear error to callers.
 
     The registry exposes ``read_reference`` by normalising the caller's
     input and delegating to :meth:`read_file`, so individual sources do not
@@ -199,20 +180,3 @@ class SkillSource(abc.ABC):
         The default implementation raises :class:`NotImplementedError`.
         """
         raise NotImplementedError(f"{type(self).__name__} does not support reading skill files")
-
-    def run_script(
-        self,
-        skill_name: str,
-        script: str,
-        args: dict[str, Any] | None = None,
-        *,
-        timeout: int = 30,
-    ) -> ScriptResult:
-        """Execute a file under a skill's ``scripts/`` directory.
-
-        The default implementation raises :class:`NotImplementedError`.
-        Sources that cannot materialise scripts on disk should leave this
-        default in place; the registry will report the limitation to the
-        caller.
-        """
-        raise NotImplementedError(f"{type(self).__name__} does not support running scripts")

@@ -7,8 +7,8 @@ instances. By default it installs a built-in
 
 Applications bring their own sources (remote registries, object storage,
 database schemas, ...) via :meth:`SkillsRegistry.add_source`. All read
-operations (``list_metadata``, ``load_skill``, ``read_reference``,
-``run_script``) are routed through the registered sources.
+operations (``list_metadata``, ``load_skill``, ``read_reference``) are routed
+through the registered sources.
 
 Collisions
     If two sources expose the same skill name, the registry raises
@@ -25,7 +25,7 @@ from typing import Any
 
 from adk_skills_agent.core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
 from adk_skills_agent.core.paths import normalize_skill_reference
-from adk_skills_agent.core.source import ReferenceFile, ScriptResult, SkillFile, SkillSource
+from adk_skills_agent.core.source import ReferenceFile, SkillFile, SkillSource
 from adk_skills_agent.core.validator import validate_skill_metadata
 from adk_skills_agent.exceptions import (
     SkillExecutionError,
@@ -44,7 +44,7 @@ class SkillsRegistry:
     * Loading full skills on-demand (when activated by an agent)
     * Listing available skills across one or more sources
     * Creating tools for ADK agents (:meth:`create_use_skill_tool`, etc.)
-    * Reading references and running scripts via the owning source
+    * Reading references and files via the owning source
 
     Example:
         >>> registry = SkillsRegistry()
@@ -66,7 +66,6 @@ class SkillsRegistry:
         # Built-in filesystem source: receives anything passed to discover().
         self._filesystem_source = FilesystemSkillSource(
             strict_validation=self.config.strict_validation,
-            script_timeout=self.config.script_timeout,
         )
         self._sources.append(self._filesystem_source)
 
@@ -200,7 +199,7 @@ class SkillsRegistry:
         """
         return any(source.has_skill(name) for source in self._sources)
 
-    # File / reference / script access --------------------------------------
+    # File / reference access ------------------------------------------------
 
     def list_files(self, skill_name: str) -> list[SkillFile]:
         """List the files belonging to ``skill_name``.
@@ -296,24 +295,6 @@ class SkillsRegistry:
             return ""
         return f" Available: {siblings}"
 
-    def run_script(
-        self,
-        skill_name: str,
-        script: str,
-        args: dict[str, Any] | None = None,
-        *,
-        timeout: int | None = None,
-    ) -> ScriptResult:
-        """Run a script from the source that owns ``skill_name``."""
-        source = self._resolve_source(skill_name)
-        effective_timeout = timeout if timeout is not None else self.config.script_timeout
-        try:
-            return source.run_script(skill_name, script, args, timeout=effective_timeout)
-        except NotImplementedError as e:
-            raise SkillExecutionError(
-                f"Source '{source.name}' does not support running scripts"
-            ) from e
-
     # Cache / lifecycle ------------------------------------------------------
 
     def clear_cache(self) -> None:
@@ -360,12 +341,6 @@ class SkillsRegistry:
         from adk_skills_agent.tools.use_skill import create_use_skill_tool
 
         return create_use_skill_tool(self, include_skills_listing=include_skills_listing)
-
-    def create_run_script_tool(self) -> Any:
-        """Create ADK tool for executing skill scripts."""
-        from adk_skills_agent.tools.run_script import create_run_script_tool
-
-        return create_run_script_tool(self)
 
     def create_read_reference_tool(self) -> Any:
         """Create ADK tool for reading skill reference files."""

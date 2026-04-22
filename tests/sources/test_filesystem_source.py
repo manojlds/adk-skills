@@ -1,9 +1,9 @@
 """Tests for the filesystem-backed skill source.
 
 The source only implements raw file I/O (:meth:`list_files`,
-:meth:`read_file`, :meth:`run_script`). Reference-path normalisation and the
-text-only ``read_reference`` wrapper live at the :class:`SkillsRegistry`
-level, so tests that exercise the reference UX go through a registry here.
+:meth:`read_file`). Reference-path normalisation and the text-only
+``read_reference`` wrapper live at the :class:`SkillsRegistry` level, so tests
+that exercise the reference UX go through a registry here.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from adk_skills_agent import SkillsRegistry
-from adk_skills_agent.core.source import ReferenceFile, ScriptResult, SkillFile
+from adk_skills_agent.core.source import ReferenceFile, SkillFile
 from adk_skills_agent.exceptions import SkillExecutionError, SkillNotFoundError
 from adk_skills_agent.sources.filesystem import FilesystemSkillSource
 
@@ -318,45 +318,3 @@ class TestFilesystemSourceFiles:
         source = FilesystemSkillSource([tmp_path])
         with pytest.raises(SkillExecutionError, match="is not a file"):
             source.read_file("pkg", "references")
-
-
-class TestFilesystemSourceScripts:
-    def test_run_script_returns_dataclass(self, tmp_path: Path) -> None:
-        skill_dir = _write_skill(tmp_path, "ops")
-        scripts = skill_dir / "scripts"
-        scripts.mkdir()
-        script = scripts / "hello.sh"
-        script.write_text("#!/bin/bash\necho 'hi'\n")
-        script.chmod(0o755)
-
-        source = FilesystemSkillSource([tmp_path])
-        result = source.run_script("ops", "hello.sh")
-
-        assert isinstance(result, ScriptResult)
-        assert result.success is True
-        assert result.returncode == 0
-        assert "hi" in result.stdout
-
-    def test_run_script_uses_configured_timeout(self, tmp_path: Path) -> None:
-        skill_dir = _write_skill(tmp_path, "ops")
-        scripts = skill_dir / "scripts"
-        scripts.mkdir()
-        script = scripts / "sleep.sh"
-        script.write_text("#!/bin/bash\nsleep 5\n")
-        script.chmod(0o755)
-
-        source = FilesystemSkillSource([tmp_path], script_timeout=1)
-        with pytest.raises(SkillExecutionError, match="timed out"):
-            source.run_script("ops", "sleep.sh")
-
-    def test_run_script_explicit_timeout_overrides_default(self, tmp_path: Path) -> None:
-        skill_dir = _write_skill(tmp_path, "ops")
-        scripts = skill_dir / "scripts"
-        scripts.mkdir()
-        script = scripts / "sleep.sh"
-        script.write_text("#!/bin/bash\nsleep 2\n")
-        script.chmod(0o755)
-
-        source = FilesystemSkillSource([tmp_path], script_timeout=30)
-        with pytest.raises(SkillExecutionError, match="timed out"):
-            source.run_script("ops", "sleep.sh", timeout=1)

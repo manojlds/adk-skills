@@ -40,25 +40,6 @@ Instructions.
         agent = MockAgent(name="test", model="gemini-2.5-flash")
         agent = with_skills(agent, [tmp_path])
 
-        assert len(agent.tools) == 3  # use_skill, run_script, read_reference
-
-    def test_with_skills_without_script_tool(self, tmp_path):
-        """Test with_skills without script tool."""
-        skill_dir = tmp_path / "my-skill"
-        skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(
-            """---
-name: my-skill
-description: A test skill
----
-
-Instructions.
-"""
-        )
-
-        agent = MockAgent(name="test", model="gemini-2.5-flash")
-        agent = with_skills(agent, [tmp_path], include_script_tool=False)
-
         assert len(agent.tools) == 2
 
     def test_with_skills_without_reference_tool(self, tmp_path):
@@ -78,7 +59,7 @@ Instructions.
         agent = MockAgent(name="test", model="gemini-2.5-flash")
         agent = with_skills(agent, [tmp_path], include_reference_tool=False)
 
-        assert len(agent.tools) == 2
+        assert len(agent.tools) == 1
 
     def test_with_skills_with_custom_config(self, tmp_path):
         """Test with_skills with custom config."""
@@ -98,7 +79,7 @@ Instructions.
         agent = MockAgent(name="test", model="gemini-2.5-flash")
         agent = with_skills(agent, [tmp_path], config=config)
 
-        assert len(agent.tools) == 3
+        assert len(agent.tools) == 2
 
     def test_with_skills_appends_to_existing_tools(self, tmp_path):
         """Test that with_skills appends to existing tools."""
@@ -119,7 +100,7 @@ Instructions.
 
         agent = with_skills(agent, [tmp_path])
 
-        assert len(agent.tools) == 4  # 1 existing + 3 new
+        assert len(agent.tools) == 3  # 1 existing + 2 new
 
     def test_with_skills_no_tools_attribute(self):
         """Test with_skills raises error for agent without tools attribute."""

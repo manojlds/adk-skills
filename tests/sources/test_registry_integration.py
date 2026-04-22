@@ -184,13 +184,6 @@ class TestRouting:
         assert result.path == "references/note.md"
         assert result.filename == "note.md"
 
-    def test_run_script_surfaces_not_implemented(self, memory_skill: Skill) -> None:
-        registry = SkillsRegistry()
-        registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
-
-        with pytest.raises(SkillExecutionError, match="does not support running scripts"):
-            registry.run_script("memory-one", "foo.sh")
-
     def test_read_reference_via_tool_routes_through_source(self, memory_skill: Skill) -> None:
         registry = SkillsRegistry()
         source = _InMemorySource({memory_skill.name: memory_skill})

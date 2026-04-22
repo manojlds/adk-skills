@@ -38,10 +38,8 @@ def main() -> None:
     # 3. Create tools
     print("3. Creating ADK tools...")
     use_skill = registry.create_use_skill_tool()
-    registry.create_run_script_tool()
     read_reference = registry.create_read_reference_tool()
     print("   ✓ Created use_skill tool")
-    print("   ✓ Created run_script tool")
     print("   ✓ Created read_reference tool")
     print()
 
@@ -100,7 +98,7 @@ def main() -> None:
     print('       instruction="You are a helpful assistant.",')
     print("       tools=[")
     print("           registry.create_use_skill_tool(),")
-    print("           registry.create_run_script_tool(),")
+    print("           registry.create_read_reference_tool(),")
     print("       ]")
     print("   )")
     print("   ```")

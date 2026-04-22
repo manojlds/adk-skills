@@ -11,13 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `SkillSource` abstract base class (`adk_skills_agent.core.source.SkillSource`)
   defining a pluggable interface for skill providers. Implementations are expected
   to provide `list_metadata()` and `load_skill()` at minimum, and may optionally
-  implement `list_files()` / `read_file()` / `run_script()` when their underlying
-  storage supports those operations.
+  implement `list_files()` / `read_file()` when their underlying storage supports
+  those operations.
 - `FilesystemSkillSource` (`adk_skills_agent.sources.filesystem`) — the built-in
   source backing `SkillsRegistry.discover(...)`. Encapsulates the existing
-  filesystem discovery, file access, and script-execution logic.
-- `ReferenceFile` and `ScriptResult` dataclasses returned by
-  `SkillsRegistry.read_reference()` / `SkillsRegistry.run_script()`.
+  filesystem discovery and file-access logic.
+- `ReferenceFile` dataclass returned by `SkillsRegistry.read_reference()`.
 - New `SkillFile` dataclass and generic file-access API
   (`SkillSource.list_files(skill_name)` and
   `SkillSource.read_file(skill_name, relative_path)`) that lets a source expose
@@ -43,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SkillsRegistry` is now composed of one or more `SkillSource` instances
   instead of maintaining a private metadata dictionary directly. The public API
   (`discover`, `list_metadata`, `load_skill`, `read_reference`, `list_files`,
-  `read_file`, `run_script`, `validate_all`, prompt/tool helpers) is preserved.
+  `read_file`, `validate_all`, prompt/tool helpers) is preserved.
 - `read_reference` is now implemented at the registry level on top of
   `SkillSource.read_file`. The registry owns reference-path normalisation
   (a bare filename with no `/` is still resolved under `references/`;
@@ -59,9 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Skill.skill_dir / reference.path`.
 - Skill lookups now fail with `SkillSourceCollisionError` when two sources
   expose the same skill name, instead of silently preferring one source.
-- `create_read_reference_tool` and `create_run_script_tool` delegate to
-  `SkillsRegistry.read_reference()` / `SkillsRegistry.run_script()`, which in
-  turn route to the source that owns the skill.
+- `create_read_reference_tool` delegates to `SkillsRegistry.read_reference()`,
+  which routes to the source that owns the skill.
 - `SkillsRegistry.clear()` now only clears the built-in filesystem source and
   the internal skill cache; any custom sources registered via `add_source(...)`
   are left untouched. Use `remove_source(...)` to unregister them explicitly.
@@ -94,6 +92,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SkillSource.read_reference` is no longer part of the abstract base class.
   Custom sources should implement `SkillSource.read_file` instead; the
   registry provides the text-only `read_reference` wrapper on top.
+- `run_script` support has been removed for now. The following symbols and
+  methods no longer exist:
+  - `SkillSource.run_script`
+  - `SkillsRegistry.run_script`
+  - `SkillsRegistry.create_run_script_tool`
+  - `adk_skills_agent.tools.run_script`
+  - `ScriptResult`
+  - `SkillsConfig.enable_scripts`, `SkillsConfig.script_timeout`, and
+    `SkillsConfig.sandbox_mode`
 
 ### Migration notes
 - **Rename any ``skill.md`` to ``SKILL.md``.** Rename the files in place
