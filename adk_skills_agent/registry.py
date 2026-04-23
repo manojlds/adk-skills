@@ -147,7 +147,13 @@ class SkillsRegistry:
                 if previous_source is source:
                     # Within-source duplicates are the source's own concern.
                     continue
-                collisions.append((metadata.name, previous_source.name, source.name))
+                collisions.append(
+                    (
+                        metadata.name,
+                        self._describe_source(previous_source),
+                        self._describe_source(source),
+                    )
+                )
 
         if collisions:
             detail = ", ".join(
@@ -472,8 +478,22 @@ class SkillsRegistry:
         if not owners:
             return None
         if len(owners) > 1:
-            names = [source.name for source in owners]
+            names = [self._describe_source(source) for source in owners]
             raise SkillSourceCollisionError(
                 f"Skill '{name}' is provided by multiple sources: {names}"
             )
         return owners[0]
+
+    def _describe_source(self, source: SkillSource) -> str:
+        """Return a disambiguated, human-readable source label.
+
+        Includes the configured source name, class name, and registry index so
+        collision messages remain actionable even when multiple sources share
+        the same ``source.name``.
+        """
+        class_name = type(source).__name__
+        try:
+            index = self._sources.index(source)
+        except ValueError:
+            return f"{source.name}<{class_name}>"
+        return f"{source.name}<{class_name}>@{index}"
