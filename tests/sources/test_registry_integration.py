@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -185,6 +186,46 @@ class TestCollisionDetection:
         registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
 
         assert len(registry) == 1
+
+    def test_len_uses_iter_names_without_materializing_metadata(self) -> None:
+        class _NamesOnlySource(SkillSource):
+            name = "names-only"
+
+            def list_metadata(self) -> list[SkillMetadata]:
+                raise AssertionError("list_metadata should not be called by len(registry)")
+
+            def iter_names(self) -> Iterator[str]:
+                yield "alpha"
+                yield "beta"
+                yield "alpha"
+
+            def load_skill(self, name: str) -> Skill:
+                raise SkillNotFoundError(name)
+
+        registry = SkillsRegistry()
+        registry.add_source(_NamesOnlySource())
+
+        assert len(registry) == 2
+
+    def test_missing_skill_error_can_use_iter_names_without_metadata(self) -> None:
+        class _NamesOnlySource(SkillSource):
+            name = "names-only"
+
+            def list_metadata(self) -> list[SkillMetadata]:
+                raise AssertionError("list_metadata should not be called for missing-skill error")
+
+            def iter_names(self) -> Iterator[str]:
+                yield "alpha"
+                yield "beta"
+
+            def load_skill(self, name: str) -> Skill:
+                raise SkillNotFoundError(name)
+
+        registry = SkillsRegistry()
+        registry.add_source(_NamesOnlySource())
+
+        with pytest.raises(SkillNotFoundError, match="Available skills"):
+            registry.load_skill("missing")
 
     def test_missing_skill_error_is_not_masked_by_collision(
         self, tmp_path: Path, memory_skill: Skill

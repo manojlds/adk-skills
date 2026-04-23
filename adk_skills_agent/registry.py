@@ -328,7 +328,7 @@ class SkillsRegistry:
         Unlike :meth:`list_metadata`, this method is collision-tolerant and
         de-duplicates names when multiple sources expose the same skill.
         """
-        return len(self._available_skill_names())
+        return len(self._available_skill_name_set())
 
     def __contains__(self, name: str) -> bool:
         """Return whether any source exposes ``name``.
@@ -437,11 +437,14 @@ class SkillsRegistry:
 
     def _available_skill_names(self) -> list[str]:
         """Return sorted, collision-tolerant skill names across all sources."""
+        return sorted(self._available_skill_name_set())
+
+    def _available_skill_name_set(self) -> set[str]:
+        """Return deduplicated skill names across all sources."""
         names: set[str] = set()
         for source in self._sources:
-            for metadata in source.list_metadata():
-                names.add(metadata.name)
-        return sorted(names)
+            names.update(source.iter_names())
+        return names
 
     def _resolve_source(self, name: str) -> SkillSource:
         """Return the single source that provides ``name``.

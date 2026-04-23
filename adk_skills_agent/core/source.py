@@ -32,6 +32,7 @@ Note:
 from __future__ import annotations
 
 import abc
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from adk_skills_agent.core.models import Skill, SkillMetadata
@@ -105,10 +106,11 @@ class SkillSource(abc.ABC):
     """Abstract base class for pluggable skill sources.
 
     Subclasses must implement :meth:`list_metadata` and :meth:`load_skill`.
-    Override :meth:`has_skill` for efficiency when the default linear scan is
-    too expensive. :meth:`list_files` and :meth:`read_file` are optional; the
-    defaults raise :class:`NotImplementedError` so that the registry can
-    surface a clear error to callers.
+    Override :meth:`iter_names`, :meth:`has_skill`, and :meth:`get_metadata`
+    when the default linear scans are too expensive. :meth:`list_files` and
+    :meth:`read_file` are optional; the defaults raise
+    :class:`NotImplementedError` so that the registry can surface a clear
+    error to callers.
 
     The registry exposes ``read_reference`` by normalising the caller's
     input and delegating to :meth:`read_file`, so individual sources do not
@@ -141,20 +143,32 @@ class SkillSource(abc.ABC):
                 provided by this source.
         """
 
+    def iter_names(self) -> Iterator[str]:
+        """Yield skill names currently provided by this source.
+
+        The default implementation iterates :meth:`list_metadata`. Subclasses
+        should override this when they can enumerate names more cheaply than
+        materializing full metadata objects (for example ``SELECT name`` in a
+        database-backed source).
+        """
+        for metadata in self.list_metadata():
+            yield metadata.name
+
     def has_skill(self, name: str) -> bool:
         """Return ``True`` if this source provides a skill called ``name``.
 
-        The default implementation iterates :meth:`list_metadata`. Subclasses
-        should override this when a cheaper existence check is available
-        (for example a ``SELECT 1`` against the database).
+        The default implementation iterates :meth:`iter_names`. Subclasses
+        should override this when a cheaper existence check is available (for
+        example a ``SELECT 1`` against the database).
         """
-        return any(meta.name == name for meta in self.list_metadata())
+        return any(skill_name == name for skill_name in self.iter_names())
 
     def get_metadata(self, name: str) -> SkillMetadata | None:
         """Return metadata for ``name`` or ``None`` if unknown.
 
-        The default implementation scans :meth:`list_metadata`; subclasses can
-        override for O(1) lookup when they keep a metadata index in memory.
+        The default implementation scans :meth:`list_metadata`; subclasses
+        should override this when they can do a direct lookup (for example an
+        indexed query or an in-memory metadata dict).
         """
         for metadata in self.list_metadata():
             if metadata.name == name:
