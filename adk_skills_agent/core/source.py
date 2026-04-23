@@ -91,6 +91,19 @@ class SkillFile:
     text_content: str | None = None
     binary_content: bytes | None = None
 
+    def __post_init__(self) -> None:
+        """Enforce content-field invariants.
+
+        ``list_files`` responses may leave both payload fields empty, but a
+        single ``SkillFile`` instance must never carry both decoded text and
+        raw bytes at the same time.
+        """
+        if self.text_content is not None and self.binary_content is not None:
+            raise ValueError(
+                f"SkillFile '{self.relative_path}' must not have both "
+                "text_content and binary_content set"
+            )
+
     @property
     def is_text(self) -> bool:
         """``True`` if :attr:`text_content` is populated."""
