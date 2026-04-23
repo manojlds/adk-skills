@@ -179,6 +179,46 @@ class TestCollisionDetection:
         assert "filesystem" in msg
         assert "memory" in msg
 
+    def test_collision_error_disambiguates_sources_with_same_name(self) -> None:
+        class _DefaultNamedSource(SkillSource):
+            # Intentionally keep default SkillSource.name == "source"
+            def __init__(self, skill: Skill) -> None:
+                self._skill = skill
+
+            def list_metadata(self) -> list[SkillMetadata]:
+                return [self._skill.to_metadata()]
+
+            def load_skill(self, name: str) -> Skill:
+                if name != self._skill.name:
+                    raise SkillNotFoundError(name)
+                return self._skill
+
+        skill_a = Skill(
+            name="dup",
+            description="dup a",
+            location=Path("/__mem__/a/SKILL.md"),
+            skill_dir=Path("/__mem__/a"),
+            instructions="a",
+        )
+        skill_b = Skill(
+            name="dup",
+            description="dup b",
+            location=Path("/__mem__/b/SKILL.md"),
+            skill_dir=Path("/__mem__/b"),
+            instructions="b",
+        )
+
+        registry = SkillsRegistry()
+        registry.add_source(_DefaultNamedSource(skill_a))
+        registry.add_source(_DefaultNamedSource(skill_b))
+
+        with pytest.raises(SkillSourceCollisionError) as exc:
+            registry.load_skill("dup")
+
+        msg = str(exc.value)
+        assert "source<_DefaultNamedSource>@1" in msg
+        assert "source<_DefaultNamedSource>@2" in msg
+
     def test_len_tolerates_collision(self, tmp_path: Path, memory_skill: Skill) -> None:
         _write_skill(tmp_path, "memory-one")
         registry = SkillsRegistry()
