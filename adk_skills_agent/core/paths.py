@@ -64,9 +64,9 @@ def validate_skill_root_relative_path(relative_path: str) -> str:
     """Validate ``relative_path`` and return it in canonical form.
 
     The returned path uses forward slashes and is guaranteed to contain no
-    ``..`` segments or empty segments. Callers that additionally need
-    filesystem-level resolution (to follow symlinks, etc.) should layer their
-    own checks on top.
+    ``..`` segments or empty segments. ``.`` segments are removed. Callers
+    that additionally need filesystem-level resolution (to follow symlinks,
+    etc.) should layer their own checks on top.
 
     Raises:
         SkillExecutionError: If the path is empty, absolute (leading ``/`` or
@@ -80,7 +80,10 @@ def validate_skill_root_relative_path(relative_path: str) -> str:
     parts = normalized.split("/")
     if any(part in ("", "..") for part in parts):
         raise SkillExecutionError(f"Access denied: path escapes skill directory: {relative_path!r}")
-    return normalized
+    canonical_parts = [part for part in parts if part != "."]
+    if not canonical_parts:
+        raise SkillExecutionError("Empty path is not allowed")
+    return "/".join(canonical_parts)
 
 
 __all__ = [
