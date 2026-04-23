@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 from adk_skills_agent.core.discovery import discover_skills
@@ -94,6 +94,9 @@ class FilesystemSkillSource(SkillSource):
 
     def has_skill(self, name: str) -> bool:
         return name in self._metadata
+
+    def iter_names(self) -> Iterator[str]:
+        return iter(self._metadata)
 
     def get_metadata(self, name: str) -> SkillMetadata | None:
         return self._metadata.get(name)
