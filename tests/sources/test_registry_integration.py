@@ -284,6 +284,24 @@ class TestRouting:
         with pytest.raises(SkillExecutionError, match="returned no content"):
             registry.read_reference("memory-one", "empty.md")
 
+    def test_read_reference_preserves_primary_error_when_hinting_fails(
+        self, memory_skill: Skill
+    ) -> None:
+        class _HintCrashSource(_InMemorySource):
+            def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
+                raise SkillExecutionError("primary read failure")
+
+            def list_files(self, skill_name: str) -> list[SkillFile]:
+                # Simulate a secondary backend failure while computing the
+                # optional "Available: [...]" hint.
+                raise RuntimeError("hint backend unavailable")
+
+        registry = SkillsRegistry()
+        registry.add_source(_HintCrashSource({memory_skill.name: memory_skill}))
+
+        with pytest.raises(SkillExecutionError, match="primary read failure"):
+            registry.read_reference("memory-one", "note.md")
+
     def test_list_files_routes_to_filesystem_source(self, tmp_path: Path) -> None:
         skill_dir = tmp_path / "pkg"
         skill_dir.mkdir()
@@ -419,3 +437,23 @@ class TestRegistryDiscoverDelegates:
         filesystem_source = registry.sources[0]
         assert isinstance(filesystem_source, FilesystemSkillSource)
         assert filesystem_source.has_skill("alpha")
+
+    def test_discover_clears_cache_for_collision_detection(self, tmp_path: Path) -> None:
+        registry = SkillsRegistry()
+        memory_skill = Skill(
+            name="dup",
+            description="memory copy",
+            location=Path("/__mem__/dup/SKILL.md"),
+            skill_dir=Path("/__mem__/dup"),
+            instructions="Memory instructions",
+        )
+        registry.add_source(_InMemorySource({"dup": memory_skill}))
+
+        # Warm cache with the custom source, then introduce a filesystem
+        # collision via discover(). The next load should surface the collision.
+        registry.load_skill("dup")
+        _write_skill(tmp_path, "dup")
+        registry.discover([tmp_path])
+
+        with pytest.raises(SkillSourceCollisionError):
+            registry.load_skill("dup")

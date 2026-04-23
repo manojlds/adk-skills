@@ -119,7 +119,11 @@ class SkillsRegistry:
             >>> count = registry.discover(["./skills"])
             >>> print(f"Found {count} skills")
         """
-        return self._filesystem_source.add_directories(directories)
+        count = self._filesystem_source.add_directories(directories)
+        # Filesystem discovery can introduce new names/collisions, so cached
+        # skills loaded before this call may no longer be valid.
+        self._skill_cache.clear()
+        return count
 
     # Core reads -------------------------------------------------------------
 
@@ -287,7 +291,9 @@ class SkillsRegistry:
         """
         try:
             files = source.list_files(skill_name)
-        except (NotImplementedError, SkillExecutionError, SkillNotFoundError):
+        except Exception:
+            # Best-effort UX only: hint failures must never mask the primary
+            # read_reference/read_file error.
             return ""
         parent = normalized_path.rsplit("/", 1)[0] if "/" in normalized_path else ""
         siblings = sorted(
