@@ -176,7 +176,10 @@ class SkillsRegistry:
             name: Skill name to load.
 
         Returns:
-            Full :class:`Skill` object with instructions.
+            Full :class:`Skill` object with instructions. The registry delegates
+            each call to the owning source and does not cache loaded
+            :class:`Skill` instances; callers should not rely on object
+            identity being stable across repeated calls.
 
         Raises:
             SkillNotFoundError: If no source provides the skill.

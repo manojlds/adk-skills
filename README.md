@@ -287,10 +287,17 @@ Each source owns its own storage and decides which capabilities it can offer:
 | Method | Required? | Notes |
 | --- | --- | --- |
 | `list_metadata()` | **Required** | Cheap skill discovery. |
-| `load_skill(name)` | **Required** | Full skill body on activation. |
+| `load_skill(name)` | **Required** | Full skill body on activation. The registry delegates every call to the owning source; it does not cache loaded `Skill` objects or guarantee object identity between calls. |
 | `has_skill(name)` | Optional | Default falls back to `list_metadata`; override for a cheap existence check. |
+| `refresh()` | Optional | Refresh source-owned catalogs/caches for dynamic stores. Return `True` when visible skills or cached content may have changed. |
+| `clear_cache()` | Optional | Drop source-owned loaded-content caches when callers need explicit invalidation. |
 | `list_files(skill_name)` | Optional | Needed whenever your source stores more than the prompt. |
 | `read_file(skill_name, path)` | Optional | Single file I/O primitive for the registry. |
+
+Dynamic sources backed by databases, remote registries, object storage, or other
+mutable stores should override `refresh()` and `clear_cache()` so freshness stays
+with the storage implementation. Static or prompt-only sources can keep the
+default no-op implementations.
 
 Sources that cannot honour an optional capability should leave the default in
 place; the registry converts the resulting `NotImplementedError` into a
