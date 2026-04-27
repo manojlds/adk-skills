@@ -188,6 +188,28 @@ class SkillSource(abc.ABC):
                 return metadata
         return None
 
+    def refresh(self) -> bool:
+        """Refresh any source-owned indexes or caches.
+
+        Returns:
+            ``True`` if the source's externally visible skill catalog or cached
+            loaded-skill content may have changed, otherwise ``False``.
+
+        The default implementation is a no-op for static sources. Dynamic
+        sources such as databases, remote registries, or filesystems with
+        long-lived caches should override this and own their freshness policy.
+        """
+        return False
+
+    def clear_cache(self) -> None:
+        """Drop any source-owned loaded-skill/content caches.
+
+        The registry calls this as a compatibility hook for applications that
+        need to invalidate caches explicitly. Sources without caches can keep
+        the default no-op implementation.
+        """
+        return None
+
     def list_files(self, skill_name: str) -> list[SkillFile]:
         """Return metadata for every file belonging to ``skill_name``.
 

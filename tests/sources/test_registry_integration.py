@@ -42,6 +42,7 @@ class _InMemorySource(SkillSource):
     def __init__(self, skills: dict[str, Skill] | None = None) -> None:
         self._skills = dict(skills or {})
         self._files: dict[tuple[str, str], SkillFile] = {}
+        self.load_calls = 0
 
     def add(self, skill: Skill) -> None:
         self._skills[skill.name] = skill
@@ -53,6 +54,7 @@ class _InMemorySource(SkillSource):
         return [skill.to_metadata() for skill in self._skills.values()]
 
     def load_skill(self, name: str) -> Skill:
+        self.load_calls += 1
         if name not in self._skills:
             raise SkillNotFoundError(name)
         return self._skills[name]
@@ -100,6 +102,26 @@ class TestAddSource:
         registry.add_source(source)
 
         assert [s for s in registry.sources if s is source] == [source]
+
+    def test_load_skill_delegates_to_source_each_time(self, memory_skill: Skill) -> None:
+        registry = SkillsRegistry()
+        source = _InMemorySource({memory_skill.name: memory_skill})
+        registry.add_source(source)
+
+        assert registry.load_skill("memory-one").instructions == "Memory instructions"
+
+        source.add(
+            Skill(
+                name="memory-one",
+                description="An in-memory skill",
+                location=Path("/__mem__/memory-one"),
+                skill_dir=Path("/__mem__/memory-one"),
+                instructions="Updated instructions",
+            )
+        )
+
+        assert registry.load_skill("memory-one").instructions == "Updated instructions"
+        assert source.load_calls == 2
 
     def test_add_source_rejects_non_source(self) -> None:
         registry = SkillsRegistry()
@@ -494,6 +516,48 @@ class TestRouting:
 
         with pytest.raises(SkillExecutionError, match="does not support reading skill files"):
             registry.read_file("memory-one", "whatever.md")
+
+
+class TestRefreshSemantics:
+    def test_refresh_delegates_to_sources_and_returns_whether_any_changed(
+        self, memory_skill: Skill
+    ) -> None:
+        class _RefreshableSource(_InMemorySource):
+            def __init__(self, *, changed: bool) -> None:
+                super().__init__({memory_skill.name: memory_skill})
+                self.changed = changed
+                self.refresh_calls = 0
+
+            def refresh(self) -> bool:
+                self.refresh_calls += 1
+                return self.changed
+
+        changed = _RefreshableSource(changed=True)
+        unchanged = _RefreshableSource(changed=False)
+        registry = SkillsRegistry()
+        registry.add_source(changed)
+        registry.add_source(unchanged)
+
+        assert registry.refresh() is True
+        assert changed.refresh_calls == 1
+        assert unchanged.refresh_calls == 1
+
+    def test_clear_cache_delegates_to_sources(self, memory_skill: Skill) -> None:
+        class _CacheableSource(_InMemorySource):
+            def __init__(self) -> None:
+                super().__init__({memory_skill.name: memory_skill})
+                self.clear_cache_calls = 0
+
+            def clear_cache(self) -> None:
+                self.clear_cache_calls += 1
+
+        source = _CacheableSource()
+        registry = SkillsRegistry()
+        registry.add_source(source)
+
+        registry.clear_cache()
+
+        assert source.clear_cache_calls == 1
 
 
 class TestClearSemantics:
