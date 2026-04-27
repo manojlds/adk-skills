@@ -103,13 +103,21 @@ class FilesystemSkillSource(SkillSource):
 
     def refresh(self) -> bool:
         previous_metadata = dict(self._metadata)
+        previous_directories = list(self._directories)
+        previous_skill_cache = dict(self._skill_cache)
         had_cached_skills = bool(self._skill_cache)
 
         if self._directories:
             directories = list(self._directories)
             self._metadata.clear()
             self._directories.clear()
-            self.add_directories(directories)
+            try:
+                self.add_directories(directories)
+            except Exception:
+                self._metadata = previous_metadata
+                self._directories = previous_directories
+                self._skill_cache = previous_skill_cache
+                raise
 
         self.clear_cache()
         return had_cached_skills or self._metadata != previous_metadata
