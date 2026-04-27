@@ -5,6 +5,22 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `SkillSource.refresh()` and `SkillSource.clear_cache()` hooks let dynamic
+  sources own catalog refresh and loaded-content cache invalidation. Custom
+  `SkillSource` implementations backed by databases, remote registries, or
+  other mutable stores should override these hooks when they need explicit
+  freshness control.
+
+### Changed
+- `SkillsRegistry.load_skill()` no longer caches loaded `Skill` instances. The
+  registry now delegates every load to the owning source so each source can
+  apply its own freshness policy. Callers that relied on repeated
+  `registry.load_skill(name)` calls returning the same object identity should
+  adjust those checks.
+
 ## [0.2.0] - 2026-04-22
 
 ### Added
