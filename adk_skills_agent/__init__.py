@@ -17,7 +17,7 @@ live on the registry, so custom sources only need to implement raw
 :meth:`SkillSource.read_file`.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from .agent import SkillsAgent
 from .core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult
