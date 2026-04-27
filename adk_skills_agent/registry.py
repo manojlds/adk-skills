@@ -61,7 +61,6 @@ class SkillsRegistry:
         """
         self.config = config or SkillsConfig()
         self._sources: list[SkillSource] = []
-        self._skill_cache: dict[str, Skill] = {}
 
         # Built-in filesystem source: receives anything passed to discover().
         self._filesystem_source = FilesystemSkillSource(
@@ -86,7 +85,6 @@ class SkillsRegistry:
         if source in self._sources:
             return
         self._sources.append(source)
-        self._skill_cache.clear()
 
     def remove_source(self, source: SkillSource) -> None:
         """Unregister a previously added source. No-op if absent."""
@@ -96,7 +94,6 @@ class SkillsRegistry:
             self._sources.remove(source)
         except ValueError:
             return
-        self._skill_cache.clear()
 
     @property
     def sources(self) -> list[SkillSource]:
@@ -119,11 +116,7 @@ class SkillsRegistry:
             >>> count = registry.discover(["./skills"])
             >>> print(f"Found {count} skills")
         """
-        count = self._filesystem_source.add_directories(directories)
-        # Filesystem discovery can introduce new names/collisions, so cached
-        # skills loaded before this call may no longer be valid.
-        self._skill_cache.clear()
-        return count
+        return self._filesystem_source.add_directories(directories)
 
     # Core reads -------------------------------------------------------------
 
@@ -189,13 +182,8 @@ class SkillsRegistry:
             SkillNotFoundError: If no source provides the skill.
             SkillSourceCollisionError: If two or more sources expose ``name``.
         """
-        if name in self._skill_cache:
-            return self._skill_cache[name]
-
         source = self._resolve_source(name)
-        skill = source.load_skill(name)
-        self._skill_cache[name] = skill
-        return skill
+        return source.load_skill(name)
 
     def has_skill(self, name: str) -> bool:
         """Check if any source provides ``name``.
@@ -313,20 +301,39 @@ class SkillsRegistry:
 
     # Cache / lifecycle ------------------------------------------------------
 
+    def refresh(self) -> bool:
+        """Refresh all sources and return whether any source changed.
+
+        The registry owns source composition, while each source owns its own
+        freshness and caching policy. Dynamic sources should override
+        :meth:`SkillSource.refresh` to update their catalogs and invalidate
+        any source-local loaded-skill caches.
+        """
+        changed = False
+        for source in self._sources:
+            changed = source.refresh() or changed
+        return changed
+
     def clear_cache(self) -> None:
-        """Drop the registry's loaded-skill cache."""
-        self._skill_cache.clear()
+        """Drop source-owned loaded-skill/content caches.
+
+        Kept for compatibility with existing applications. Loaded skill
+        freshness is source-owned; the registry delegates cache invalidation to
+        each registered source.
+        """
+        for source in self._sources:
+            source.clear_cache()
 
     def clear(self) -> None:
         """Reset the registry's view of skills.
 
-        Clears the built-in filesystem source and the registry's cache. Any
+        Clears the built-in filesystem source and source-owned caches. Any
         additional sources registered via :meth:`add_source` are preserved —
         clearing them would be destructive. Callers who want a full reset
         should reconstruct the registry or remove custom sources explicitly.
         """
         self._filesystem_source.clear()
-        self._skill_cache.clear()
+        self.clear_cache()
 
     def __len__(self) -> int:
         """Return the number of unique skill names across all sources.

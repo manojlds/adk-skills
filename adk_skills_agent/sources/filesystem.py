@@ -101,6 +101,19 @@ class FilesystemSkillSource(SkillSource):
     def get_metadata(self, name: str) -> SkillMetadata | None:
         return self._metadata.get(name)
 
+    def refresh(self) -> bool:
+        previous_metadata = dict(self._metadata)
+        had_cached_skills = bool(self._skill_cache)
+
+        if self._directories:
+            directories = list(self._directories)
+            self._metadata.clear()
+            self._directories.clear()
+            self.add_directories(directories)
+
+        self.clear_cache()
+        return had_cached_skills or self._metadata != previous_metadata
+
     def load_skill(self, name: str) -> Skill:
         if name in self._skill_cache:
             return self._skill_cache[name]

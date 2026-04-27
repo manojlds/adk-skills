@@ -87,6 +87,19 @@ class TestFilesystemSourceLoading:
         second = source.load_skill("alpha")
         assert first is second
 
+    def test_refresh_clears_loaded_skill_cache(self, tmp_path: Path) -> None:
+        skill_dir = _write_skill(tmp_path, "alpha", body="Original instructions.")
+        source = FilesystemSkillSource([tmp_path])
+
+        assert "Original instructions" in source.load_skill("alpha").instructions
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: Test skill alpha\n---\n\nUpdated instructions.",
+            encoding="utf-8",
+        )
+
+        assert source.refresh() is True
+        assert "Updated instructions" in source.load_skill("alpha").instructions
+
     def test_load_skill_missing_raises(self, tmp_path: Path) -> None:
         source = FilesystemSkillSource([tmp_path])
         with pytest.raises(SkillNotFoundError):
