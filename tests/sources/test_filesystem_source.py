@@ -100,6 +100,28 @@ class TestFilesystemSourceLoading:
         assert source.refresh() is True
         assert "Updated instructions" in source.load_skill("alpha").instructions
 
+    def test_refresh_restores_previous_state_when_discovery_fails(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_skill(tmp_path, "alpha", body="Original instructions.")
+        source = FilesystemSkillSource([tmp_path])
+        cached_skill = source.load_skill("alpha")
+
+        def _raise_discovery_error(_paths):
+            raise RuntimeError("discovery failed")
+
+        monkeypatch.setattr(
+            "adk_skills_agent.sources.filesystem.discover_skills",
+            _raise_discovery_error,
+        )
+
+        with pytest.raises(RuntimeError, match="discovery failed"):
+            source.refresh()
+
+        assert source.directories == [tmp_path.resolve()]
+        assert [metadata.name for metadata in source.list_metadata()] == ["alpha"]
+        assert source.load_skill("alpha") is cached_skill
+
     def test_load_skill_missing_raises(self, tmp_path: Path) -> None:
         source = FilesystemSkillSource([tmp_path])
         with pytest.raises(SkillNotFoundError):
