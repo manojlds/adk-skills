@@ -6,19 +6,19 @@ top of the :class:`SkillSource` contract. It exercises the public
 every file of a multi-file skill package in SQLite - ``SKILL.md``,
 references, text assets, and a binary asset - and verifies that:
 
-* ``registry.list_metadata()`` / ``registry.load_skill()`` see the skill.
-* The ``use_skill`` tool returns the correct instructions.
-* ``registry.list_files()`` reports every file with sensible metadata.
-* ``registry.read_file()`` round-trips both text and binary contents.
-* ``registry.read_reference()`` (and the tool wrapper) honour the relaxed
+* ``await registry.list_metadata()`` / ``await registry.load_skill()`` see the skill.
+* The async ``use_skill`` tool returns the correct instructions.
+* ``await registry.list_files()`` reports every file with sensible metadata.
+* ``await registry.read_file()`` round-trips both text and binary contents.
+* ``await registry.read_reference()`` (and the tool wrapper) honour the relaxed
   0.2.0 path shapes (bare filename -> ``references/``, explicit prefix,
   ``assets/``) and refuses binary files with a clear error.
 * Path-traversal attempts are blocked.
 
-The source itself is defined in this file and uses stdlib ``sqlite3`` so the
-test has no SQLAlchemy coupling. Note how small it is now that the registry
-owns reference-path normalisation: the source only implements raw file I/O
-(``list_files`` / ``read_file``) and the registry does the rest.
+The source itself is defined in this file. It uses stdlib ``sqlite3`` (a
+synchronous driver) inside ``async def`` methods because in-memory SQLite
+calls are cheap; in production, an async source would use a non-blocking
+driver such as ``aiosqlite`` or wrap calls with :func:`asyncio.to_thread`.
 """
 
 from __future__ import annotations
@@ -66,8 +66,10 @@ class _SqliteSkillSource(SkillSource):
       content_hash, text_content, binary_content, PRIMARY KEY (skill_name,
       relative_path))``
 
-    This is intentionally dumb and test-only; real implementations will layer
-    versioning, ownership, and binding filters on top.
+    Implements the async :class:`SkillSource` contract by wrapping the sync
+    sqlite3 driver inside ``async def`` methods. Real implementations against
+    Postgres/MySQL would use a true async driver (``asyncpg``, ``aiomysql``,
+    ``aiosqlite``); for an in-memory test source the sync calls are fine.
     """
 
     name = "sqlite-test"
@@ -138,7 +140,7 @@ class _SqliteSkillSource(SkillSource):
 
     # SkillSource contract ----------------------------------------------
 
-    def list_metadata(self) -> list[SkillMetadata]:
+    async def list_metadata(self) -> list[SkillMetadata]:
         rows = self._conn.execute("SELECT name, description FROM skills ORDER BY name").fetchall()
         return [
             SkillMetadata(
@@ -149,11 +151,11 @@ class _SqliteSkillSource(SkillSource):
             for row in rows
         ]
 
-    def has_skill(self, name: str) -> bool:
+    async def has_skill(self, name: str) -> bool:
         row = self._conn.execute("SELECT 1 FROM skills WHERE name = ? LIMIT 1", (name,)).fetchone()
         return row is not None
 
-    def load_skill(self, name: str) -> Skill:
+    async def load_skill(self, name: str) -> Skill:
         row = self._conn.execute(
             "SELECT name, description, instructions FROM skills WHERE name = ?",
             (name,),
@@ -183,8 +185,8 @@ class _SqliteSkillSource(SkillSource):
             else None,
         )
 
-    def list_files(self, skill_name: str) -> list[SkillFile]:
-        if not self.has_skill(skill_name):
+    async def list_files(self, skill_name: str) -> list[SkillFile]:
+        if not await self.has_skill(skill_name):
             raise SkillNotFoundError(f"Skill '{skill_name}' not found in sqlite-test source")
         rows = self._conn.execute(
             "SELECT relative_path, mime_type, size_bytes, content_hash "
@@ -201,8 +203,8 @@ class _SqliteSkillSource(SkillSource):
             for row in rows
         ]
 
-    def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
-        if not self.has_skill(skill_name):
+    async def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
+        if not await self.has_skill(skill_name):
             raise SkillNotFoundError(f"Skill '{skill_name}' not found in sqlite-test source")
         normalized = validate_skill_root_relative_path(relative_path)
         row = self._conn.execute(
@@ -308,13 +310,13 @@ def registry(sqlite_connection: sqlite3.Connection) -> SkillsRegistry:
 
 
 class TestSqliteSkillSourceMetadataAndLoad:
-    def test_registry_sees_the_skill(self, registry: SkillsRegistry) -> None:
-        names = [meta.name for meta in registry.list_metadata()]
+    async def test_registry_sees_the_skill(self, registry: SkillsRegistry) -> None:
+        names = [meta.name for meta in await registry.list_metadata()]
         assert names == [_SKILL_NAME]
-        assert registry.has_skill(_SKILL_NAME)
+        assert await registry.has_skill(_SKILL_NAME)
 
-    def test_load_skill_returns_parsed_instructions(self, registry: SkillsRegistry) -> None:
-        skill = registry.load_skill(_SKILL_NAME)
+    async def test_load_skill_returns_parsed_instructions(self, registry: SkillsRegistry) -> None:
+        skill = await registry.load_skill(_SKILL_NAME)
         assert skill.name == _SKILL_NAME
         assert "Invoice extraction" in skill.instructions
         # The source reports the presence of the standard Anthropic subfolders
@@ -324,9 +326,9 @@ class TestSqliteSkillSourceMetadataAndLoad:
         assert skill.assets_dir is not None
         assert skill.scripts_dir is None
 
-    def test_use_skill_tool_surfaces_instructions(self, registry: SkillsRegistry) -> None:
+    async def test_use_skill_tool_surfaces_instructions(self, registry: SkillsRegistry) -> None:
         use_skill = registry.create_use_skill_tool()
-        result = use_skill(_SKILL_NAME)
+        result = await use_skill(_SKILL_NAME)
         assert result["skill_name"] == _SKILL_NAME
         assert "Invoice extraction" in result["instructions"]
         assert result["has_references"] is True
@@ -335,8 +337,8 @@ class TestSqliteSkillSourceMetadataAndLoad:
 
 
 class TestSqliteSkillSourceListFiles:
-    def test_list_files_returns_every_entry(self, registry: SkillsRegistry) -> None:
-        files = registry.list_files(_SKILL_NAME)
+    async def test_list_files_returns_every_entry(self, registry: SkillsRegistry) -> None:
+        files = await registry.list_files(_SKILL_NAME)
         by_path = {file.relative_path: file for file in files}
         assert set(by_path) == {
             "SKILL.md",
@@ -349,41 +351,40 @@ class TestSqliteSkillSourceListFiles:
         assert by_path["assets/template.json"].mime_type == "application/json"
         assert by_path["assets/logo.png"].mime_type == "image/png"
         assert by_path["references/guide.md"].size_bytes == len(_GUIDE_MD.encode("utf-8"))
-        # Listing does not load the payloads.
         for file in files:
             assert file.text_content is None
             assert file.binary_content is None
 
 
 class TestSqliteSkillSourceReadFile:
-    def test_read_file_text(self, registry: SkillsRegistry) -> None:
-        file = registry.read_file(_SKILL_NAME, "references/guide.md")
+    async def test_read_file_text(self, registry: SkillsRegistry) -> None:
+        file = await registry.read_file(_SKILL_NAME, "references/guide.md")
         assert file.text_content == _GUIDE_MD
         assert file.binary_content is None
         assert file.is_text is True
 
-    def test_read_file_binary_returns_bytes(self, registry: SkillsRegistry) -> None:
-        file = registry.read_file(_SKILL_NAME, "assets/logo.png")
+    async def test_read_file_binary_returns_bytes(self, registry: SkillsRegistry) -> None:
+        file = await registry.read_file(_SKILL_NAME, "assets/logo.png")
         assert file.binary_content == _LOGO_PNG
         assert file.text_content is None
         assert file.is_binary is True
         assert file.mime_type == "image/png"
 
-    def test_read_file_rejects_path_escape(self, registry: SkillsRegistry) -> None:
+    async def test_read_file_rejects_path_escape(self, registry: SkillsRegistry) -> None:
         with pytest.raises(SkillExecutionError, match="escapes skill directory"):
-            registry.read_file(_SKILL_NAME, "../secret.txt")
+            await registry.read_file(_SKILL_NAME, "../secret.txt")
 
-    def test_read_file_missing_raises_execution_error(self, registry: SkillsRegistry) -> None:
+    async def test_read_file_missing_raises_execution_error(self, registry: SkillsRegistry) -> None:
         # Programmatic read_file keeps its error minimal; the ``Available:``
         # hint is a registry-level, LLM-facing convenience reserved for
         # read_reference.
         with pytest.raises(SkillExecutionError, match="not found"):
-            registry.read_file(_SKILL_NAME, "assets/missing.json")
+            await registry.read_file(_SKILL_NAME, "assets/missing.json")
 
 
 class TestSqliteSkillSourceReadReference:
-    def test_bare_filename_defaults_to_references(self, registry: SkillsRegistry) -> None:
-        result = registry.read_reference(_SKILL_NAME, "guide.md")
+    async def test_bare_filename_defaults_to_references(self, registry: SkillsRegistry) -> None:
+        result = await registry.read_reference(_SKILL_NAME, "guide.md")
         assert isinstance(result, ReferenceFile)
         assert result.content == _GUIDE_MD
         assert result.filename == "guide.md"
@@ -391,32 +392,34 @@ class TestSqliteSkillSourceReadReference:
         # (``sqlite://...``) never leak back to the caller.
         assert result.path == "references/guide.md"
 
-    def test_explicit_references_prefix(self, registry: SkillsRegistry) -> None:
-        result = registry.read_reference(_SKILL_NAME, "references/examples.md")
+    async def test_explicit_references_prefix(self, registry: SkillsRegistry) -> None:
+        result = await registry.read_reference(_SKILL_NAME, "references/examples.md")
         assert result.content == _EXAMPLES_MD
         assert result.path == "references/examples.md"
 
-    def test_asset_path_reads_text_asset(self, registry: SkillsRegistry) -> None:
+    async def test_asset_path_reads_text_asset(self, registry: SkillsRegistry) -> None:
         # Text assets (JSON, grammar, etc.) are allowed through read_reference
         # in 0.2.0, matching the UX of the filesystem source.
-        result = registry.read_reference(_SKILL_NAME, "assets/template.json")
+        result = await registry.read_reference(_SKILL_NAME, "assets/template.json")
         assert result.content == _TEMPLATE_JSON
         assert result.path == "assets/template.json"
-        result = registry.read_reference(_SKILL_NAME, "assets/grammar.lark")
+        result = await registry.read_reference(_SKILL_NAME, "assets/grammar.lark")
         assert result.content == _GRAMMAR_LARK
         assert result.path == "assets/grammar.lark"
 
-    def test_binary_asset_rejected_with_helpful_message(self, registry: SkillsRegistry) -> None:
+    async def test_binary_asset_rejected_with_helpful_message(
+        self, registry: SkillsRegistry
+    ) -> None:
         with pytest.raises(SkillExecutionError, match="not a text file"):
-            registry.read_reference(_SKILL_NAME, "assets/logo.png")
+            await registry.read_reference(_SKILL_NAME, "assets/logo.png")
 
-    def test_skill_md_is_readable(self, registry: SkillsRegistry) -> None:
+    async def test_skill_md_is_readable(self, registry: SkillsRegistry) -> None:
         # Not idiomatic, but exercises the "known root file" normalisation rule.
-        result = registry.read_reference(_SKILL_NAME, "SKILL.md")
+        result = await registry.read_reference(_SKILL_NAME, "SKILL.md")
         assert "Invoice extraction" in result.content
         assert result.path == "SKILL.md"
 
-    def test_nested_legacy_path_maps_under_references(
+    async def test_nested_legacy_path_maps_under_references(
         self, sqlite_connection: sqlite3.Connection
     ) -> None:
         source = _SqliteSkillSource(sqlite_connection)
@@ -434,38 +437,38 @@ class TestSqliteSkillSourceReadReference:
         registry = SkillsRegistry()
         registry.add_source(source)
 
-        result = registry.read_reference("nested", "guides/intro.md")
+        result = await registry.read_reference("nested", "guides/intro.md")
         assert result.content == "Nested guide content"
         assert result.filename == "intro.md"
         assert result.path == "references/guides/intro.md"
 
-    def test_path_escape_blocked(self, registry: SkillsRegistry) -> None:
+    async def test_path_escape_blocked(self, registry: SkillsRegistry) -> None:
         with pytest.raises(SkillExecutionError, match="escapes skill directory"):
-            registry.read_reference(_SKILL_NAME, "references/../../etc/passwd")
+            await registry.read_reference(_SKILL_NAME, "references/../../etc/passwd")
 
-    def test_missing_reference_hint_lists_neighbours(self, registry: SkillsRegistry) -> None:
+    async def test_missing_reference_hint_lists_neighbours(self, registry: SkillsRegistry) -> None:
         with pytest.raises(SkillExecutionError, match="references/guide.md"):
-            registry.read_reference(_SKILL_NAME, "nonexistent.md")
+            await registry.read_reference(_SKILL_NAME, "nonexistent.md")
 
 
 class TestSqliteSkillSourceToolLayer:
-    def test_read_reference_tool_returns_dict(self, registry: SkillsRegistry) -> None:
+    async def test_read_reference_tool_returns_dict(self, registry: SkillsRegistry) -> None:
         tool = registry.create_read_reference_tool()
-        result = tool(_SKILL_NAME, "guide.md")
+        result = await tool(_SKILL_NAME, "guide.md")
         assert result == {
             "content": _GUIDE_MD,
             "path": "references/guide.md",
             "filename": "guide.md",
         }
 
-    def test_read_reference_tool_can_read_assets(self, registry: SkillsRegistry) -> None:
+    async def test_read_reference_tool_can_read_assets(self, registry: SkillsRegistry) -> None:
         tool = registry.create_read_reference_tool()
-        result = tool(_SKILL_NAME, "assets/template.json")
+        result = await tool(_SKILL_NAME, "assets/template.json")
         assert result["content"] == _TEMPLATE_JSON
         assert result["path"] == "assets/template.json"
         assert result["filename"] == "template.json"
 
-    def test_read_reference_tool_refuses_binary(self, registry: SkillsRegistry) -> None:
+    async def test_read_reference_tool_refuses_binary(self, registry: SkillsRegistry) -> None:
         tool = registry.create_read_reference_tool()
         with pytest.raises(SkillExecutionError, match="not a text file"):
-            tool(_SKILL_NAME, "assets/logo.png")
+            await tool(_SKILL_NAME, "assets/logo.png")

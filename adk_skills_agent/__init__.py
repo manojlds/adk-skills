@@ -15,9 +15,15 @@ references, assets, and any other files in a skill package (text or binary).
 Reference-path normalisation and the text-only ``read_reference`` wrapper
 live on the registry, so custom sources only need to implement raw
 :meth:`SkillSource.read_file`.
+
+Starting in 0.4.0, all runtime read methods on :class:`SkillSource` and
+:class:`SkillsRegistry` are coroutines, so I/O-bound sources (databases,
+remote registries) can perform real non-blocking I/O. Construction and
+filesystem discovery remain synchronous setup-time helpers; only runtime
+catalog/file access requires ``await``.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 
 from .agent import SkillsAgent
 from .core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult

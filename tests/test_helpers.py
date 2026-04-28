@@ -21,10 +21,9 @@ class MockAgent:
 
 
 class TestWithSkills:
-    """Tests for with_skills helper function."""
+    """Tests for the async with_skills helper."""
 
-    def test_with_skills_adds_tools(self, tmp_path):
-        """Test that with_skills adds tools to agent."""
+    async def test_with_skills_adds_tools(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -38,12 +37,11 @@ Instructions.
         )
 
         agent = MockAgent(name="test", model="gemini-2.5-flash")
-        agent = with_skills(agent, [tmp_path])
+        agent = await with_skills(agent, [tmp_path])
 
         assert len(agent.tools) == 2
 
-    def test_with_skills_without_reference_tool(self, tmp_path):
-        """Test with_skills without reference tool."""
+    async def test_with_skills_without_reference_tool(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -57,12 +55,11 @@ Instructions.
         )
 
         agent = MockAgent(name="test", model="gemini-2.5-flash")
-        agent = with_skills(agent, [tmp_path], include_reference_tool=False)
+        agent = await with_skills(agent, [tmp_path], include_reference_tool=False)
 
         assert len(agent.tools) == 1
 
-    def test_with_skills_with_custom_config(self, tmp_path):
-        """Test with_skills with custom config."""
+    async def test_with_skills_with_custom_config(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -77,12 +74,11 @@ Instructions.
 
         config = SkillsConfig(strict_validation=False)
         agent = MockAgent(name="test", model="gemini-2.5-flash")
-        agent = with_skills(agent, [tmp_path], config=config)
+        agent = await with_skills(agent, [tmp_path], config=config)
 
         assert len(agent.tools) == 2
 
-    def test_with_skills_appends_to_existing_tools(self, tmp_path):
-        """Test that with_skills appends to existing tools."""
+    async def test_with_skills_appends_to_existing_tools(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -96,50 +92,43 @@ Instructions.
         )
 
         agent = MockAgent(name="test", model="gemini-2.5-flash")
-        agent.tools = [lambda: "existing"]  # Add an existing tool
+        agent.tools = [lambda: "existing"]
 
-        agent = with_skills(agent, [tmp_path])
+        agent = await with_skills(agent, [tmp_path])
 
-        assert len(agent.tools) == 3  # 1 existing + 2 new
+        assert len(agent.tools) == 3
 
-    def test_with_skills_no_tools_attribute(self):
-        """Test with_skills raises error for agent without tools attribute."""
-
+    async def test_with_skills_no_tools_attribute(self):
         class BadAgent:
             pass
 
         agent = BadAgent()
 
         with pytest.raises(AttributeError, match="does not have a 'tools' attribute"):
-            with_skills(agent, [])
+            await with_skills(agent, [])
 
 
 class TestCreateSkillsAgent:
-    """Tests for create_skills_agent helper function."""
+    """Tests for create_skills_agent."""
 
-    def test_create_skills_agent_requires_adk(self):
-        """Test that create_skills_agent requires google.adk."""
-        # This will raise ImportError since google.adk is not installed
+    async def test_create_skills_agent_requires_adk(self):
         with pytest.raises(ImportError, match="google.adk is required"):
-            create_skills_agent(
+            await create_skills_agent(
                 name="test-agent",
                 model="gemini-2.5-flash",
             )
 
 
 class TestInjectSkillsPrompt:
-    """Tests for inject_skills_prompt helper function."""
+    """Tests for the async inject_skills_prompt helper."""
 
-    def test_inject_skills_prompt_empty_directories(self, tmp_path):
-        """Test inject_skills_prompt with no skills."""
+    async def test_inject_skills_prompt_empty_directories(self, tmp_path):
         instruction = "You are helpful."
-        result = inject_skills_prompt(instruction, [tmp_path])
+        result = await inject_skills_prompt(instruction, [tmp_path])
 
-        # Should not inject anything if no skills found
         assert result == instruction
 
-    def test_inject_skills_prompt_with_skills_xml(self, tmp_path):
-        """Test inject_skills_prompt with skills in XML format."""
+    async def test_inject_skills_prompt_with_skills_xml(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -153,14 +142,13 @@ Instructions.
         )
 
         instruction = "You are helpful."
-        result = inject_skills_prompt(instruction, [tmp_path], format="xml")
+        result = await inject_skills_prompt(instruction, [tmp_path], format="xml")
 
         assert "You are helpful." in result
         assert "<available_skills>" in result
         assert "<name>my-skill</name>" in result
 
-    def test_inject_skills_prompt_with_skills_text(self, tmp_path):
-        """Test inject_skills_prompt with skills in text format."""
+    async def test_inject_skills_prompt_with_skills_text(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -174,14 +162,13 @@ Instructions.
         )
 
         instruction = "You are helpful."
-        result = inject_skills_prompt(instruction, [tmp_path], format="text")
+        result = await inject_skills_prompt(instruction, [tmp_path], format="text")
 
         assert "You are helpful." in result
         assert "Available Skills:" in result
         assert "- my-skill: A test skill" in result
 
-    def test_inject_skills_prompt_with_custom_config(self, tmp_path):
-        """Test inject_skills_prompt with custom config."""
+    async def test_inject_skills_prompt_with_custom_config(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -196,12 +183,11 @@ Instructions.
 
         config = SkillsConfig(strict_validation=False)
         instruction = "You are helpful."
-        result = inject_skills_prompt(instruction, [tmp_path], format="xml", config=config)
+        result = await inject_skills_prompt(instruction, [tmp_path], format="xml", config=config)
 
         assert "<available_skills>" in result
 
-    def test_inject_skills_prompt_with_registry(self, tmp_path):
-        """Test inject_skills_prompt with existing registry (efficient pattern)."""
+    async def test_inject_skills_prompt_with_registry(self, tmp_path):
         from adk_skills_agent.registry import SkillsRegistry
 
         skill_dir = tmp_path / "my-skill"
@@ -216,31 +202,27 @@ Instructions.
 """
         )
 
-        # Create and populate registry
         registry = SkillsRegistry()
         registry.discover([tmp_path])
 
-        # Use registry instead of directories
         instruction = "You are helpful."
-        result = inject_skills_prompt(instruction, registry=registry, format="xml")
+        result = await inject_skills_prompt(instruction, registry=registry, format="xml")
 
         assert "You are helpful." in result
         assert "<available_skills>" in result
         assert "<name>my-skill</name>" in result
 
-    def test_inject_skills_prompt_error_both_params(self, tmp_path):
-        """Test inject_skills_prompt raises error when both params provided."""
+    async def test_inject_skills_prompt_error_both_params(self, tmp_path):
         from adk_skills_agent.registry import SkillsRegistry
 
         registry = SkillsRegistry()
         instruction = "You are helpful."
 
         with pytest.raises(ValueError, match="Cannot specify both 'directories' and 'registry'"):
-            inject_skills_prompt(instruction, directories=[tmp_path], registry=registry)
+            await inject_skills_prompt(instruction, directories=[tmp_path], registry=registry)
 
-    def test_inject_skills_prompt_error_no_params(self):
-        """Test inject_skills_prompt raises error when neither param provided."""
+    async def test_inject_skills_prompt_error_no_params(self):
         instruction = "You are helpful."
 
         with pytest.raises(ValueError, match="Must specify either 'directories' or 'registry'"):
-            inject_skills_prompt(instruction)
+            await inject_skills_prompt(instruction)

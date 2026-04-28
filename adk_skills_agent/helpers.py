@@ -1,7 +1,10 @@
 """Helper functions for common skills operations.
 
 This module provides convenience functions for common tasks like adding
-skills support to existing agents.
+skills support to existing agents. The runtime helpers
+(:func:`with_skills`, :func:`create_skills_agent`,
+:func:`inject_skills_prompt`) are async because the underlying
+:class:`SkillsRegistry` API is async.
 """
 
 from collections.abc import Sequence
@@ -12,97 +15,98 @@ from adk_skills_agent.core.models import SkillsConfig
 from adk_skills_agent.registry import SkillsRegistry
 
 
-def with_skills(
+async def with_skills(
     agent: Any,
     directories: Sequence[Union[str, Path]],
     config: Optional[SkillsConfig] = None,
     include_reference_tool: bool = True,
+    auto_inject_prompt: bool = False,
+    prompt_format: str = "xml",
 ) -> Any:
     """Add skills support to an existing ADK agent.
 
-    This is a convenience function that:
-    1. Creates a SkillsRegistry
-    2. Discovers skills from the specified directories
-    3. Creates and adds skill tools to the agent
+    Discovers skills synchronously, then awaits the registry's async
+    helpers to build the ``use_skill`` tool description (and optionally
+    inject the listing into the agent's instruction).
 
     Args:
-        agent: Existing google.adk.agents.Agent instance
-        directories: List of directories to discover skills from
-        config: Optional SkillsConfig for customization
-        include_reference_tool: Include read_reference tool (default: True)
+        agent: Existing ``google.adk.agents.Agent`` instance.
+        directories: List of directories to discover skills from.
+        config: Optional ``SkillsConfig`` for customization.
+        include_reference_tool: Include the ``read_reference`` tool
+            (default: True).
+        auto_inject_prompt: When ``True``, the discovered skills are
+            appended to ``agent.instruction`` and the ``use_skill`` tool
+            description omits the listing to avoid duplication.
+        prompt_format: Format for prompt injection (``"xml"`` or
+            ``"text"``).
 
     Returns:
-        The agent with skills tools added
+        The agent with skills tools added.
 
     Example:
         >>> from google.adk.agents import Agent
         >>> from adk_skills_agent import with_skills
         >>>
-        >>> # Create a standard ADK agent
         >>> agent = Agent(
         ...     name="assistant",
         ...     model="gemini-2.5-flash",
         ...     instruction="You are a helpful assistant.",
         ... )
-        >>>
-        >>> # Add skills support
-        >>> agent = with_skills(agent, ["./skills", "~/.adk/skills"])
-
-    Note:
-        This function assumes the agent has a `tools` attribute that can be
-        modified. If your agent implementation differs, you may need to use
-        SkillsRegistry directly.
+        >>> agent = await with_skills(agent, ["./skills", "~/.adk/skills"])
     """
-    # Create registry and discover skills
     registry = SkillsRegistry(config=config or SkillsConfig())
     registry.discover(directories)
 
-    # Create tools
-    tools = [registry.create_use_skill_tool()]
+    available_skills_xml: str | None = None
+    if not auto_inject_prompt:
+        available_skills_xml = await registry.to_prompt_xml()
 
+    tools: list[Any] = [registry.create_use_skill_tool(available_skills_xml=available_skills_xml)]
     if include_reference_tool:
         tools.append(registry.create_read_reference_tool())
 
-    # Add tools to agent
-    if hasattr(agent, "tools"):
-        if agent.tools is None:
-            agent.tools = tools
-        else:
-            agent.tools.extend(tools)
-    else:
+    if not hasattr(agent, "tools"):
         raise AttributeError(
             "Agent does not have a 'tools' attribute. Use SkillsRegistry directly to create tools."
         )
 
+    if auto_inject_prompt and hasattr(agent, "instruction"):
+        agent.instruction = await registry.inject_skills_prompt(
+            agent.instruction or "", format=prompt_format
+        )
+
+    if agent.tools is None:
+        agent.tools = tools
+    else:
+        agent.tools.extend(tools)
+
     return agent
 
 
-def create_skills_agent(
+async def create_skills_agent(
     name: str,
     model: str,
     instruction: str = "",
     skills_directories: Optional[Sequence[Union[str, Path]]] = None,
     **kwargs: Any,
 ) -> Any:
-    """Create an ADK agent with skills support in one call.
-
-    This is a convenience function that combines agent creation with skills
-    discovery. It's equivalent to creating a SkillsAgent and calling build().
+    """Create an ADK agent with skills support in one async call.
 
     Args:
-        name: Agent name
-        model: Model identifier (e.g., "gemini-2.5-flash")
-        instruction: System instruction/prompt
-        skills_directories: Directories to discover skills from
-        **kwargs: Additional arguments passed to SkillsAgent
+        name: Agent name.
+        model: Model identifier (e.g., ``"gemini-2.5-flash"``).
+        instruction: System instruction/prompt.
+        skills_directories: Directories to discover skills from.
+        **kwargs: Additional arguments passed to :class:`SkillsAgent`.
 
     Returns:
-        Configured google.adk.agents.Agent with skills support
+        Configured ``google.adk.agents.Agent`` with skills support.
 
     Example:
         >>> from adk_skills_agent import create_skills_agent
         >>>
-        >>> agent = create_skills_agent(
+        >>> agent = await create_skills_agent(
         ...     name="assistant",
         ...     model="gemini-2.5-flash",
         ...     instruction="You are a helpful assistant.",
@@ -110,7 +114,7 @@ def create_skills_agent(
         ... )
 
     Note:
-        This requires google.adk to be installed.
+        Requires ``google.adk`` to be installed.
     """
     from adk_skills_agent.agent import SkillsAgent
 
@@ -121,11 +125,10 @@ def create_skills_agent(
         skills_directories=skills_directories,
         **kwargs,
     )
+    return await skills_agent.build()
 
-    return skills_agent.build()
 
-
-def inject_skills_prompt(
+async def inject_skills_prompt(
     instruction: str,
     directories: Optional[Sequence[Union[str, Path]]] = None,
     format: str = "xml",
@@ -134,64 +137,38 @@ def inject_skills_prompt(
 ) -> str:
     """Inject skills listing into an instruction/system prompt.
 
-    This helper supports two usage patterns:
-    1. Directory-based: Pass directories to discover skills (creates temporary registry)
-    2. Registry-based: Pass an existing SkillsRegistry instance (more efficient)
+    Two usage patterns:
+
+    1. Directory-based: Pass ``directories`` to discover skills (creates
+       a temporary registry).
+    2. Registry-based: Pass an existing :class:`SkillsRegistry` instance
+       (more efficient).
 
     Args:
-        instruction: Base instruction/system prompt
-        directories: Directories to discover skills from (optional, mutually exclusive with registry)
-        format: Output format - "xml" or "text" (default: "xml")
-        config: Optional SkillsConfig for customization (only used with directories)
-        registry: Optional existing SkillsRegistry instance (mutually exclusive with directories)
+        instruction: Base instruction/system prompt.
+        directories: Directories to discover skills from. Mutually
+            exclusive with ``registry``.
+        format: Output format - ``"xml"`` or ``"text"`` (default: ``"xml"``).
+        config: Optional ``SkillsConfig`` (only used with ``directories``).
+        registry: Optional existing :class:`SkillsRegistry` instance.
+            Mutually exclusive with ``directories``.
 
     Returns:
-        Instruction with skills listing appended
+        Instruction with skills listing appended.
 
     Raises:
-        ValueError: If both directories and registry are provided, or neither is provided
-
-    Example:
-        >>> from adk_skills_agent import inject_skills_prompt
-        >>>
-        >>> # Pattern 1: Directory-based (discovers skills)
-        >>> instruction = "You are a helpful assistant."
-        >>> full_instruction = inject_skills_prompt(
-        ...     instruction,
-        ...     directories=["./skills"],
-        ...     format="xml",
-        ... )
-        >>> print(full_instruction)
-        You are a helpful assistant.
-
-        <available_skills>
-        ...
-        </available_skills>
-        >>>
-        >>> # Pattern 2: Registry-based (reuses existing registry)
-        >>> from adk_skills_agent import SkillsRegistry
-        >>> registry = SkillsRegistry()
-        >>> registry.discover(["./skills"])
-        >>> full_instruction = inject_skills_prompt(
-        ...     instruction,
-        ...     registry=registry,
-        ...     format="xml",
-        ... )
+        ValueError: If both or neither of ``directories`` / ``registry``
+            are provided.
     """
-    # Validate arguments
     if directories is not None and registry is not None:
         raise ValueError("Cannot specify both 'directories' and 'registry'. Choose one.")
-
     if directories is None and registry is None:
         raise ValueError("Must specify either 'directories' or 'registry'.")
 
-    # Use provided registry or create temporary one
     if registry is not None:
-        return registry.inject_skills_prompt(instruction, format=format)
+        return await registry.inject_skills_prompt(instruction, format=format)
 
-    # Directory-based: create temporary registry
-    # At this point, directories must be not None (validated above)
-    assert directories is not None  # Type narrowing for mypy
+    assert directories is not None
     temp_registry = SkillsRegistry(config=config or SkillsConfig())
     temp_registry.discover(directories)
-    return temp_registry.inject_skills_prompt(instruction, format=format)
+    return await temp_registry.inject_skills_prompt(instruction, format=format)

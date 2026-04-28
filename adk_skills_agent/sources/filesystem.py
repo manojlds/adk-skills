@@ -2,13 +2,19 @@
 
 The original adk-skills behaviour: scan one or more directories for ``SKILL.md``
 files, parse metadata up-front, and resolve full skill bodies lazily.
+
+Discovery (``__init__`` / :meth:`add_directories`) is synchronous because it
+runs once at setup time. Runtime methods are ``async`` to satisfy the
+:class:`~adk_skills_agent.core.source.SkillSource` contract; blocking parsing
+and file I/O are pushed off the event loop with :func:`asyncio.to_thread`.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import mimetypes
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 from adk_skills_agent.core.discovery import discover_skills
@@ -89,19 +95,22 @@ class FilesystemSkillSource(SkillSource):
 
         return len(self._metadata)
 
-    def list_metadata(self) -> list[SkillMetadata]:
+    async def list_metadata(self) -> list[SkillMetadata]:
         return list(self._metadata.values())
 
-    def has_skill(self, name: str) -> bool:
+    async def has_skill(self, name: str) -> bool:
         return name in self._metadata
 
-    def iter_names(self) -> Iterator[str]:
-        return iter(self._metadata)
+    async def iter_names(self) -> list[str]:
+        return list(self._metadata)
 
-    def get_metadata(self, name: str) -> SkillMetadata | None:
+    async def get_metadata(self, name: str) -> SkillMetadata | None:
         return self._metadata.get(name)
 
-    def refresh(self) -> bool:
+    async def refresh(self) -> bool:
+        return await asyncio.to_thread(self._refresh_sync)
+
+    def _refresh_sync(self) -> bool:
         previous_metadata = dict(self._metadata)
         previous_directories = list(self._directories)
         previous_skill_cache = dict(self._skill_cache)
@@ -119,10 +128,10 @@ class FilesystemSkillSource(SkillSource):
                 self._skill_cache = previous_skill_cache
                 raise
 
-        self.clear_cache()
+        self._skill_cache.clear()
         return had_cached_skills or self._metadata != previous_metadata
 
-    def load_skill(self, name: str) -> Skill:
+    async def load_skill(self, name: str) -> Skill:
         if name in self._skill_cache:
             return self._skill_cache[name]
 
@@ -133,16 +142,20 @@ class FilesystemSkillSource(SkillSource):
                 f"Available skills: {list(self._metadata)}"
             )
 
-        skill = parse_full(metadata.location)
+        skill = await asyncio.to_thread(parse_full, metadata.location)
         self._skill_cache[name] = skill
         return skill
 
-    def list_files(self, skill_name: str) -> list[SkillFile]:
+    async def list_files(self, skill_name: str) -> list[SkillFile]:
         try:
-            skill_obj = self.load_skill(skill_name)
+            skill_obj = await self.load_skill(skill_name)
         except SkillNotFoundError as e:
             raise SkillNotFoundError(f"Skill '{skill_name}' not found. Cannot list files.") from e
 
+        return await asyncio.to_thread(self._list_files_sync, skill_obj)
+
+    @staticmethod
+    def _list_files_sync(skill_obj: Skill) -> list[SkillFile]:
         skill_dir = skill_obj.skill_dir.resolve()
         files: list[SkillFile] = []
         for candidate in sorted(skill_dir.rglob("*")):
@@ -179,12 +192,15 @@ class FilesystemSkillSource(SkillSource):
             )
         return files
 
-    def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
+    async def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
         try:
-            skill_obj = self.load_skill(skill_name)
+            skill_obj = await self.load_skill(skill_name)
         except SkillNotFoundError as e:
             raise SkillNotFoundError(f"Skill '{skill_name}' not found. Cannot read file.") from e
 
+        return await asyncio.to_thread(self._read_file_sync, skill_obj, skill_name, relative_path)
+
+    def _read_file_sync(self, skill_obj: Skill, skill_name: str, relative_path: str) -> SkillFile:
         resolved = self._resolve_under_skill(skill_obj.skill_dir, relative_path)
         if not resolved.exists():
             raise SkillExecutionError(f"File '{relative_path}' not found in skill '{skill_name}'.")
@@ -236,7 +252,7 @@ class FilesystemSkillSource(SkillSource):
             )
         return target_resolved
 
-    def clear_cache(self) -> None:
+    async def clear_cache(self) -> None:
         """Drop any cached fully-loaded skills."""
         self._skill_cache.clear()
 

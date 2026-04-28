@@ -11,7 +11,6 @@ class TestSkillsAgentInit:
     """Tests for SkillsAgent initialization."""
 
     def test_init_minimal(self):
-        """Test initialization with minimal parameters."""
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
@@ -20,10 +19,8 @@ class TestSkillsAgentInit:
         assert agent.name == "test-agent"
         assert agent.model == "gemini-2.5-flash"
         assert agent.instruction == ""
-        assert len(agent.registry) == 0
 
     def test_init_with_instruction(self):
-        """Test initialization with instruction."""
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
@@ -32,8 +29,7 @@ class TestSkillsAgentInit:
 
         assert agent.instruction == "You are helpful."
 
-    def test_init_with_skills_directories(self, tmp_path):
-        """Test initialization with skills directories."""
+    async def test_init_with_skills_directories(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -52,11 +48,11 @@ Instructions.
             skills_directories=[tmp_path],
         )
 
-        assert len(agent.registry) == 1
+        names = [meta.name for meta in await agent.registry.list_metadata()]
+        assert names == ["my-skill"]
 
     def test_init_with_custom_config(self):
-        """Test initialization with custom skills config."""
-        config = SkillsConfig(strict_validation=False)
+        config = SkillsConfig(strict_validation=True)
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
@@ -69,8 +65,7 @@ Instructions.
 class TestSkillsAgentDiscoverSkills:
     """Tests for discover_skills method."""
 
-    def test_discover_skills(self, tmp_path):
-        """Test discovering skills."""
+    async def test_discover_skills(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -90,10 +85,12 @@ Instructions.
 
         count = agent.discover_skills([tmp_path])
         assert count == 1
-        assert len(agent.registry) == 1
+        names = [meta.name for meta in await agent.registry.list_metadata()]
+        assert names == ["my-skill"]
 
-    def test_discover_skills_with_validation_error(self, tmp_path):
-        """Test that validation errors raise SkillConfigError."""
+    async def test_build_raises_validation_error(self, tmp_path):
+        # Validation now runs during build(), so the discover step itself
+        # is permissive. Build surfaces the failure.
         skill_dir = tmp_path / "invalid-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -109,14 +106,16 @@ Instructions.
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
+            skills_directories=[tmp_path],
             validate_skills=True,
         )
 
+        # build() raises when google.adk is not installed in tests, but the
+        # validation error fires first.
         with pytest.raises(SkillConfigError):
-            agent.discover_skills([tmp_path])
+            await agent.build()
 
-    def test_discover_skills_without_validation(self, tmp_path):
-        """Test discovering skills without validation."""
+    async def test_build_skips_validation_when_disabled(self, tmp_path):
         skill_dir = tmp_path / "invalid-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -132,18 +131,20 @@ Instructions.
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
+            skills_directories=[tmp_path],
             validate_skills=False,
         )
 
-        count = agent.discover_skills([tmp_path])
-        assert count == 1
+        # No SkillConfigError; we hit the ImportError because google.adk is
+        # not installed in the test environment.
+        with pytest.raises(ImportError, match="google.adk is required"):
+            await agent.build()
 
 
 class TestSkillsAgentGetTools:
     """Tests for get_tools method."""
 
-    def test_get_tools_default(self, tmp_path):
-        """Test getting tools with default configuration."""
+    async def test_get_tools_default(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -162,11 +163,10 @@ Instructions.
             skills_directories=[tmp_path],
         )
 
-        tools = agent.get_tools()
-        assert len(tools) == 2  # use_skill, read_reference
+        tools = await agent.get_tools()
+        assert len(tools) == 2
 
-    def test_get_tools_without_reference_tool(self, tmp_path):
-        """Test getting tools without reference tool."""
+    async def test_get_tools_without_reference_tool(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -186,22 +186,20 @@ Instructions.
             include_reference_tool=False,
         )
 
-        tools = agent.get_tools()
-        assert len(tools) == 1  # use_skill
+        tools = await agent.get_tools()
+        assert len(tools) == 1
 
-    def test_get_tools_minimal(self):
-        """Test getting tools with minimal tools."""
+    async def test_get_tools_minimal(self):
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
             include_reference_tool=False,
         )
 
-        tools = agent.get_tools()
-        assert len(tools) == 1  # only use_skill
+        tools = await agent.get_tools()
+        assert len(tools) == 1
 
-    def test_get_tools_without_listing_when_auto_inject(self, tmp_path):
-        """Test that use_skill tool doesn't include listing when auto_inject_prompt=True."""
+    async def test_get_tools_listing_swap_when_auto_inject(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -214,43 +212,39 @@ Instructions.
 """
         )
 
-        # Without auto_inject_prompt (default) - should have listing
         agent_without = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
             skills_directories=[tmp_path],
             auto_inject_prompt=False,
         )
-        tools_without = agent_without.get_tools()
+        tools_without = await agent_without.get_tools()
         assert "<available_skills>" in tools_without[0].__doc__
 
-        # With auto_inject_prompt - should NOT have listing
         agent_with = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
             skills_directories=[tmp_path],
             auto_inject_prompt=True,
         )
-        tools_with = agent_with.get_tools()
+        tools_with = await agent_with.get_tools()
         assert "<available_skills>" not in tools_with[0].__doc__
 
 
 class TestSkillsAgentGetInstruction:
     """Tests for get_instruction method."""
 
-    def test_get_instruction_basic(self):
-        """Test getting basic instruction."""
+    async def test_get_instruction_basic(self):
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
             instruction="You are helpful.",
         )
 
-        instruction = agent.get_instruction()
+        instruction = await agent.get_instruction()
         assert instruction == "You are helpful."
 
-    def test_get_instruction_with_auto_inject(self, tmp_path):
-        """Test getting instruction with auto prompt injection."""
+    async def test_get_instruction_with_auto_inject(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -271,12 +265,11 @@ Instructions.
             auto_inject_prompt=True,
         )
 
-        instruction = agent.get_instruction()
+        instruction = await agent.get_instruction()
         assert "You are helpful." in instruction
         assert "<available_skills>" in instruction
 
-    def test_get_instruction_with_text_format(self, tmp_path):
-        """Test getting instruction with text format injection."""
+    async def test_get_instruction_with_text_format(self, tmp_path):
         skill_dir = tmp_path / "my-skill"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text(
@@ -298,11 +291,10 @@ Instructions.
             prompt_format="text",
         )
 
-        instruction = agent.get_instruction()
+        instruction = await agent.get_instruction()
         assert "Available Skills:" in instruction
 
-    def test_get_instruction_no_injection_without_skills(self):
-        """Test that instruction doesn't include injection without skills."""
+    async def test_get_instruction_no_injection_without_skills(self):
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
@@ -310,30 +302,27 @@ Instructions.
             auto_inject_prompt=True,
         )
 
-        instruction = agent.get_instruction()
+        instruction = await agent.get_instruction()
         assert instruction == "You are helpful."
 
 
 class TestSkillsAgentBuild:
     """Tests for build method."""
 
-    def test_build_requires_adk(self):
-        """Test that build raises ImportError without google.adk."""
+    async def test_build_requires_adk(self):
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
         )
 
-        # This will raise ImportError since google.adk is not installed in tests
         with pytest.raises(ImportError, match="google.adk is required"):
-            agent.build()
+            await agent.build()
 
 
 class TestSkillsAgentRepr:
     """Tests for string representation."""
 
-    def test_repr_without_skills(self):
-        """Test string representation without skills."""
+    def test_repr_includes_name_and_model(self):
         agent = SkillsAgent(
             name="test-agent",
             model="gemini-2.5-flash",
@@ -342,27 +331,3 @@ class TestSkillsAgentRepr:
         repr_str = repr(agent)
         assert "test-agent" in repr_str
         assert "gemini-2.5-flash" in repr_str
-        assert "skills=0" in repr_str
-
-    def test_repr_with_skills(self, tmp_path):
-        """Test string representation with skills."""
-        skill_dir = tmp_path / "my-skill"
-        skill_dir.mkdir()
-        (skill_dir / "SKILL.md").write_text(
-            """---
-name: my-skill
-description: A test skill
----
-
-Instructions.
-"""
-        )
-
-        agent = SkillsAgent(
-            name="test-agent",
-            model="gemini-2.5-flash",
-            skills_directories=[tmp_path],
-        )
-
-        repr_str = repr(agent)
-        assert "skills=1" in repr_str

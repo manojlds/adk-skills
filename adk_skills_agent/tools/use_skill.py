@@ -1,74 +1,77 @@
-"""Use skill tool - activate a skill on-demand."""
+"""Use skill tool - activate a skill on-demand.
 
+The factory returns an ``async def`` tool. ADK natively awaits async tool
+callables, so registering it on an :class:`~google.adk.agents.LlmAgent`
+yields a fully non-blocking skill-activation path.
+"""
+
+from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, Callable
+
+from adk_skills_agent.registry import _format_metadata_xml
 
 if TYPE_CHECKING:
     from adk_skills_agent.registry import SkillsRegistry
 
 
-def generate_available_skills_xml(registry: "SkillsRegistry") -> str:
-    """Generate <available_skills> XML block from registry metadata.
+async def generate_available_skills_xml(registry: "SkillsRegistry") -> str:
+    """Generate the ``<available_skills>`` XML block from registry metadata.
+
+    Use this once at agent setup if you want to bake the listing into the
+    ``use_skill`` tool description::
+
+        listing = await registry.to_prompt_xml()
+        tool = registry.create_use_skill_tool(available_skills_xml=listing)
+
+    or pair it with prompt injection (:meth:`SkillsRegistry.inject_skills_prompt`)
+    and leave ``available_skills_xml=None`` so the listing is sourced from the
+    system prompt instead.
 
     Args:
-        registry: SkillsRegistry instance with discovered skills
+        registry: SkillsRegistry instance with discovered skills.
 
     Returns:
-        XML string listing all available skills
+        XML string listing all available skills.
     """
-    skills_metadata = registry.list_metadata()
-
-    if not skills_metadata:
-        return "<available_skills>\nNo skills available.\n</available_skills>"
-
-    xml_parts = ["<available_skills>"]
-
-    for metadata in skills_metadata:
-        xml_parts.append("  <skill>")
-        xml_parts.append(f"    <name>{metadata.name}</name>")
-        # Escape description for XML
-        description = (
-            metadata.description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        )
-        xml_parts.append(f"    <description>{description}</description>")
-        xml_parts.append("  </skill>")
-
-    xml_parts.append("</available_skills>")
-
-    return "\n".join(xml_parts)
+    return _format_metadata_xml(await registry.list_metadata())
 
 
 def create_use_skill_tool(
-    registry: "SkillsRegistry", include_skills_listing: bool = True
-) -> Callable[[str], dict[str, Any]]:
-    """Create ADK tool for skill activation.
+    registry: "SkillsRegistry",
+    *,
+    available_skills_xml: str | None = None,
+) -> Callable[[str], Awaitable[dict[str, Any]]]:
+    """Create the async ADK tool for skill activation.
 
-    This tool enables on-demand skill activation. When include_skills_listing is True
-    (default), the tool description contains an <available_skills> block listing all
-    discovered skills. When False, the listing is omitted (useful when skills are
-    injected into the system prompt instead).
+    The returned tool is an ``async def`` coroutine. When invoked, it loads
+    the requested skill from whichever :class:`SkillSource` owns it and
+    returns the full instructions plus directory hints.
 
     Args:
-        registry: SkillsRegistry instance with discovered skills
-        include_skills_listing: Whether to include <available_skills> XML in tool
-            description (default: True). Set to False when using prompt injection.
+        registry: SkillsRegistry instance with discovered skills.
+        available_skills_xml: Optional pre-computed listing block to embed in
+            the tool docstring. Pass the result of
+            ``await registry.to_prompt_xml()`` if you want the listing inside
+            the tool description; pass ``None`` (default) when relying on
+            prompt injection so the listing isn't duplicated.
 
     Returns:
-        Callable tool function with optional skill listing in docstring
+        Async callable tool function with optional skill listing in docstring.
 
     Example:
-        >>> registry = SkillsRegistry()
-        >>> registry.discover(["./skills"])
-        >>>
-        >>> # Pattern 1: Tool-based (default) - skills in tool description
-        >>> use_skill = create_use_skill_tool(registry)
-        >>>
-        >>> # Pattern 2: Prompt-based - skills in system prompt, not in tool
-        >>> prompt = registry.to_prompt_xml()
-        >>> use_skill = create_use_skill_tool(registry, include_skills_listing=False)
-        >>> agent = Agent(instruction=f"...\\n{prompt}", tools=[use_skill])
+        Pattern 1 — listing in the tool description::
+
+            listing = await registry.to_prompt_xml()
+            use_skill = registry.create_use_skill_tool(available_skills_xml=listing)
+
+        Pattern 2 — listing in the system prompt::
+
+            prompt = await registry.inject_skills_prompt(base_prompt)
+            use_skill = registry.create_use_skill_tool()
+            agent = LlmAgent(instruction=prompt, tools=[use_skill])
     """
 
-    def use_skill(name: str) -> dict[str, Any]:
+    async def use_skill(name: str) -> dict[str, Any]:
         """Load a skill to get detailed instructions for a specific task.
 
         Skills provide specialized knowledge and step-by-step guidance.
@@ -88,8 +91,7 @@ def create_use_skill_tool(
             - has_references: Whether the skill has a references/ directory
             - has_assets: Whether the skill has an assets/ directory
         """
-        # Load full skill on-demand
-        skill = registry.load_skill(name)
+        skill = await registry.load_skill(name)
 
         return {
             "skill_name": skill.name,
@@ -100,16 +102,11 @@ def create_use_skill_tool(
             "has_assets": skill.assets_dir is not None,
         }
 
-    # Generate XML and inject into docstring if requested
-    if include_skills_listing:
-        available_skills_xml = generate_available_skills_xml(registry)
-    else:
-        available_skills_xml = ""
-
     if use_skill.__doc__:
-        use_skill.__doc__ = use_skill.__doc__.format(available_skills_xml=available_skills_xml)
+        use_skill.__doc__ = use_skill.__doc__.format(
+            available_skills_xml=available_skills_xml or ""
+        )
 
-    # Set function name for better debugging
     use_skill.__name__ = "use_skill"
 
     return use_skill
