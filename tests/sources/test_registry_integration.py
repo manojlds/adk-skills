@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -50,22 +49,22 @@ class _InMemorySource(SkillSource):
     def add_file(self, skill_name: str, file: SkillFile) -> None:
         self._files[(skill_name, file.relative_path)] = file
 
-    def list_metadata(self) -> list[SkillMetadata]:
+    async def list_metadata(self) -> list[SkillMetadata]:
         return [skill.to_metadata() for skill in self._skills.values()]
 
-    def load_skill(self, name: str) -> Skill:
+    async def load_skill(self, name: str) -> Skill:
         self.load_calls += 1
         if name not in self._skills:
             raise SkillNotFoundError(name)
         return self._skills[name]
 
-    def has_skill(self, name: str) -> bool:
+    async def has_skill(self, name: str) -> bool:
         return name in self._skills
 
-    def list_files(self, skill_name: str) -> list[SkillFile]:
+    async def list_files(self, skill_name: str) -> list[SkillFile]:
         return [file for (s, _), file in self._files.items() if s == skill_name]
 
-    def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
+    async def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
         key = (skill_name, relative_path)
         if key not in self._files:
             raise SkillExecutionError(f"File '{relative_path}' not found in skill '{skill_name}'.")
@@ -84,17 +83,17 @@ def memory_skill() -> Skill:
 
 
 class TestAddSource:
-    def test_add_source_registers_with_registry(self, memory_skill: Skill) -> None:
+    async def test_add_source_registers_with_registry(self, memory_skill: Skill) -> None:
         registry = SkillsRegistry()
         source = _InMemorySource({memory_skill.name: memory_skill})
         registry.add_source(source)
 
-        names = [meta.name for meta in registry.list_metadata()]
+        names = [meta.name for meta in await registry.list_metadata()]
         assert "memory-one" in names
-        assert registry.has_skill("memory-one")
-        assert registry.load_skill("memory-one").instructions == "Memory instructions"
+        assert await registry.has_skill("memory-one")
+        assert (await registry.load_skill("memory-one")).instructions == "Memory instructions"
 
-    def test_add_source_idempotent(self, memory_skill: Skill) -> None:
+    async def test_add_source_idempotent(self, memory_skill: Skill) -> None:
         registry = SkillsRegistry()
         source = _InMemorySource({memory_skill.name: memory_skill})
 
@@ -103,12 +102,12 @@ class TestAddSource:
 
         assert [s for s in registry.sources if s is source] == [source]
 
-    def test_load_skill_delegates_to_source_each_time(self, memory_skill: Skill) -> None:
+    async def test_load_skill_delegates_to_source_each_time(self, memory_skill: Skill) -> None:
         registry = SkillsRegistry()
         source = _InMemorySource({memory_skill.name: memory_skill})
         registry.add_source(source)
 
-        assert registry.load_skill("memory-one").instructions == "Memory instructions"
+        assert (await registry.load_skill("memory-one")).instructions == "Memory instructions"
 
         source.add(
             Skill(
@@ -120,7 +119,7 @@ class TestAddSource:
             )
         )
 
-        assert registry.load_skill("memory-one").instructions == "Updated instructions"
+        assert (await registry.load_skill("memory-one")).instructions == "Updated instructions"
         assert source.load_calls == 2
 
     def test_add_source_rejects_non_source(self) -> None:
@@ -134,25 +133,24 @@ class TestAddSource:
         with pytest.raises(ValueError):
             registry.remove_source(filesystem_source)
 
-    def test_remove_custom_source_clears_cache(self, memory_skill: Skill) -> None:
+    async def test_remove_custom_source_drops_skill(self, memory_skill: Skill) -> None:
         registry = SkillsRegistry()
         source = _InMemorySource({memory_skill.name: memory_skill})
         registry.add_source(source)
-        registry.load_skill("memory-one")  # warm the cache
+        await registry.load_skill("memory-one")
 
         registry.remove_source(source)
 
-        assert not registry.has_skill("memory-one")
+        assert not await registry.has_skill("memory-one")
         with pytest.raises(SkillNotFoundError):
-            registry.load_skill("memory-one")
+            await registry.load_skill("memory-one")
 
-    def test_add_source_clears_cache_for_collision_detection(self, tmp_path: Path) -> None:
+    async def test_add_source_surfaces_collisions(self, tmp_path: Path) -> None:
         _write_skill(tmp_path, "dup")
         registry = SkillsRegistry()
         registry.discover([tmp_path])
 
-        # Warm the cache from filesystem source.
-        registry.load_skill("dup")
+        await registry.load_skill("dup")
 
         other = Skill(
             name="dup",
@@ -164,29 +162,33 @@ class TestAddSource:
         registry.add_source(_InMemorySource({"dup": other}))
 
         with pytest.raises(SkillSourceCollisionError):
-            registry.load_skill("dup")
+            await registry.load_skill("dup")
 
 
 class TestCollisionDetection:
-    def test_list_metadata_raises_on_collision(self, tmp_path: Path, memory_skill: Skill) -> None:
+    async def test_list_metadata_raises_on_collision(
+        self, tmp_path: Path, memory_skill: Skill
+    ) -> None:
         _write_skill(tmp_path, "memory-one")
         registry = SkillsRegistry()
         registry.discover([tmp_path])
         registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
 
         with pytest.raises(SkillSourceCollisionError):
-            registry.list_metadata()
+            await registry.list_metadata()
 
-    def test_load_skill_raises_on_collision(self, tmp_path: Path, memory_skill: Skill) -> None:
+    async def test_load_skill_raises_on_collision(
+        self, tmp_path: Path, memory_skill: Skill
+    ) -> None:
         _write_skill(tmp_path, "memory-one")
         registry = SkillsRegistry()
         registry.discover([tmp_path])
         registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
 
         with pytest.raises(SkillSourceCollisionError):
-            registry.load_skill("memory-one")
+            await registry.load_skill("memory-one")
 
-    def test_collision_error_mentions_source_names(
+    async def test_collision_error_mentions_source_names(
         self, tmp_path: Path, memory_skill: Skill
     ) -> None:
         _write_skill(tmp_path, "memory-one")
@@ -195,22 +197,22 @@ class TestCollisionDetection:
         registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
 
         with pytest.raises(SkillSourceCollisionError) as exc:
-            registry.list_metadata()
+            await registry.list_metadata()
 
         msg = str(exc.value)
         assert "filesystem" in msg
         assert "memory" in msg
 
-    def test_collision_error_disambiguates_sources_with_same_name(self) -> None:
+    async def test_collision_error_disambiguates_sources_with_same_name(self) -> None:
         class _DefaultNamedSource(SkillSource):
             # Intentionally keep default SkillSource.name == "source"
             def __init__(self, skill: Skill) -> None:
                 self._skill = skill
 
-            def list_metadata(self) -> list[SkillMetadata]:
+            async def list_metadata(self) -> list[SkillMetadata]:
                 return [self._skill.to_metadata()]
 
-            def load_skill(self, name: str) -> Skill:
+            async def load_skill(self, name: str) -> Skill:
                 if name != self._skill.name:
                     raise SkillNotFoundError(name)
                 return self._skill
@@ -235,61 +237,34 @@ class TestCollisionDetection:
         registry.add_source(_DefaultNamedSource(skill_b))
 
         with pytest.raises(SkillSourceCollisionError) as exc:
-            registry.load_skill("dup")
+            await registry.load_skill("dup")
 
         msg = str(exc.value)
         assert "source<_DefaultNamedSource>@1" in msg
         assert "source<_DefaultNamedSource>@2" in msg
 
-    def test_len_tolerates_collision(self, tmp_path: Path, memory_skill: Skill) -> None:
-        _write_skill(tmp_path, "memory-one")
-        registry = SkillsRegistry()
-        registry.discover([tmp_path])
-        registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
-
-        assert len(registry) == 1
-
-    def test_len_uses_iter_names_without_materializing_metadata(self) -> None:
+    async def test_available_names_use_iter_names_without_materializing_metadata(
+        self,
+    ) -> None:
         class _NamesOnlySource(SkillSource):
             name = "names-only"
 
-            def list_metadata(self) -> list[SkillMetadata]:
-                raise AssertionError("list_metadata should not be called by len(registry)")
+            async def list_metadata(self) -> list[SkillMetadata]:
+                raise AssertionError("list_metadata should not be called by missing-skill error")
 
-            def iter_names(self) -> Iterator[str]:
-                yield "alpha"
-                yield "beta"
-                yield "alpha"
+            async def iter_names(self) -> list[str]:
+                return ["alpha", "beta"]
 
-            def load_skill(self, name: str) -> Skill:
-                raise SkillNotFoundError(name)
-
-        registry = SkillsRegistry()
-        registry.add_source(_NamesOnlySource())
-
-        assert len(registry) == 2
-
-    def test_missing_skill_error_can_use_iter_names_without_metadata(self) -> None:
-        class _NamesOnlySource(SkillSource):
-            name = "names-only"
-
-            def list_metadata(self) -> list[SkillMetadata]:
-                raise AssertionError("list_metadata should not be called for missing-skill error")
-
-            def iter_names(self) -> Iterator[str]:
-                yield "alpha"
-                yield "beta"
-
-            def load_skill(self, name: str) -> Skill:
+            async def load_skill(self, name: str) -> Skill:
                 raise SkillNotFoundError(name)
 
         registry = SkillsRegistry()
         registry.add_source(_NamesOnlySource())
 
         with pytest.raises(SkillNotFoundError, match="Available skills"):
-            registry.load_skill("missing")
+            await registry.load_skill("missing")
 
-    def test_missing_skill_error_is_not_masked_by_collision(
+    async def test_missing_skill_error_is_not_masked_by_collision(
         self, tmp_path: Path, memory_skill: Skill
     ) -> None:
         _write_skill(tmp_path, "memory-one")
@@ -298,9 +273,9 @@ class TestCollisionDetection:
         registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
 
         with pytest.raises(SkillNotFoundError):
-            registry.load_skill("not-here")
+            await registry.load_skill("not-here")
 
-    def test_validate_missing_skill_error_is_not_masked_by_collision(
+    async def test_validate_missing_skill_error_is_not_masked_by_collision(
         self, tmp_path: Path, memory_skill: Skill
     ) -> None:
         _write_skill(tmp_path, "memory-one")
@@ -309,11 +284,11 @@ class TestCollisionDetection:
         registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
 
         with pytest.raises(SkillNotFoundError):
-            registry.validate_skill_by_name("not-here")
+            await registry.validate_skill_by_name("not-here")
 
 
 class TestRouting:
-    def test_read_reference_routes_to_owning_source(self, memory_skill: Skill) -> None:
+    async def test_read_reference_routes_to_owning_source(self, memory_skill: Skill) -> None:
         # The registry normalises ``"note.md"`` to ``"references/note.md"``
         # and delegates to ``source.read_file`` — the custom source only
         # stores raw files keyed by their skill-root-relative path.
@@ -331,13 +306,13 @@ class TestRouting:
         )
         registry.add_source(source)
 
-        result = registry.read_reference("memory-one", "note.md")
+        result = await registry.read_reference("memory-one", "note.md")
 
         assert result.content == "Hello"
         assert result.path == "references/note.md"
         assert result.filename == "note.md"
 
-    def test_read_reference_via_tool_routes_through_source(self, memory_skill: Skill) -> None:
+    async def test_read_reference_via_tool_routes_through_source(self, memory_skill: Skill) -> None:
         registry = SkillsRegistry()
         source = _InMemorySource({memory_skill.name: memory_skill})
         source.add_file(
@@ -353,7 +328,7 @@ class TestRouting:
         registry.add_source(source)
 
         tool = registry.create_read_reference_tool()
-        result = tool("memory-one", "note.md")
+        result = await tool("memory-one", "note.md")
 
         assert result == {
             "content": "Tool routing",
@@ -361,14 +336,16 @@ class TestRouting:
             "filename": "note.md",
         }
 
-    def test_read_reference_rejects_path_escape_before_source(self, memory_skill: Skill) -> None:
+    async def test_read_reference_rejects_path_escape_before_source(
+        self, memory_skill: Skill
+    ) -> None:
         registry = SkillsRegistry()
         registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
 
         with pytest.raises(SkillExecutionError, match="escapes skill directory"):
-            registry.read_reference("memory-one", "../../secret.txt")
+            await registry.read_reference("memory-one", "../../secret.txt")
 
-    def test_read_reference_errors_when_source_returns_no_content(
+    async def test_read_reference_errors_when_source_returns_no_content(
         self, memory_skill: Skill
     ) -> None:
         registry = SkillsRegistry()
@@ -385,16 +362,16 @@ class TestRouting:
         registry.add_source(source)
 
         with pytest.raises(SkillExecutionError, match="returned no content"):
-            registry.read_reference("memory-one", "empty.md")
+            await registry.read_reference("memory-one", "empty.md")
 
-    def test_read_reference_preserves_primary_error_when_hinting_fails(
+    async def test_read_reference_preserves_primary_error_when_hinting_fails(
         self, memory_skill: Skill
     ) -> None:
         class _HintCrashSource(_InMemorySource):
-            def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
+            async def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
                 raise SkillExecutionError("primary read failure")
 
-            def list_files(self, skill_name: str) -> list[SkillFile]:
+            async def list_files(self, skill_name: str) -> list[SkillFile]:
                 # Simulate a secondary backend failure while computing the
                 # optional "Available: [...]" hint.
                 raise RuntimeError("hint backend unavailable")
@@ -403,9 +380,9 @@ class TestRouting:
         registry.add_source(_HintCrashSource({memory_skill.name: memory_skill}))
 
         with pytest.raises(SkillExecutionError, match="primary read failure"):
-            registry.read_reference("memory-one", "note.md")
+            await registry.read_reference("memory-one", "note.md")
 
-    def test_list_files_routes_to_filesystem_source(self, tmp_path: Path) -> None:
+    async def test_list_files_routes_to_filesystem_source(self, tmp_path: Path) -> None:
         skill_dir = tmp_path / "pkg"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("---\nname: pkg\ndescription: d\n---\n\nBody.\n")
@@ -415,11 +392,11 @@ class TestRouting:
         registry = SkillsRegistry()
         registry.discover([tmp_path])
 
-        files = registry.list_files("pkg")
+        files = await registry.list_files("pkg")
         paths = {f.relative_path for f in files}
         assert paths == {"SKILL.md", "assets/template.json"}
 
-    def test_read_file_routes_to_filesystem_source(self, tmp_path: Path) -> None:
+    async def test_read_file_routes_to_filesystem_source(self, tmp_path: Path) -> None:
         skill_dir = tmp_path / "pkg"
         skill_dir.mkdir()
         (skill_dir / "SKILL.md").write_text("---\nname: pkg\ndescription: d\n---\n\nBody.\n")
@@ -429,11 +406,11 @@ class TestRouting:
         registry = SkillsRegistry()
         registry.discover([tmp_path])
 
-        file = registry.read_file("pkg", "assets/template.json")
+        file = await registry.read_file("pkg", "assets/template.json")
         assert file.text_content == '{"a": 1}'
         assert file.mime_type == "application/json"
 
-    def test_list_files_routes_to_custom_source(self, memory_skill: Skill) -> None:
+    async def test_list_files_routes_to_custom_source(self, memory_skill: Skill) -> None:
         registry = SkillsRegistry()
         source = _InMemorySource({memory_skill.name: memory_skill})
         source.add_file(
@@ -447,11 +424,11 @@ class TestRouting:
         )
         registry.add_source(source)
 
-        files = registry.list_files("memory-one")
+        files = await registry.list_files("memory-one")
         assert len(files) == 1
         assert files[0].relative_path == "references/guide.md"
 
-    def test_read_file_routes_to_custom_source(self, memory_skill: Skill) -> None:
+    async def test_read_file_routes_to_custom_source(self, memory_skill: Skill) -> None:
         registry = SkillsRegistry()
         source = _InMemorySource({memory_skill.name: memory_skill})
         source.add_file(
@@ -466,14 +443,14 @@ class TestRouting:
         )
         registry.add_source(source)
 
-        file = registry.read_file("memory-one", "assets/data.json")
+        file = await registry.read_file("memory-one", "assets/data.json")
         assert file.text_content == '{"x": 1}'
 
-    def test_list_files_surfaces_not_implemented_as_execution_error(
+    async def test_list_files_surfaces_not_implemented_as_execution_error(
         self,
     ) -> None:
         class _NoFilesSource(_InMemorySource):
-            def list_files(self, skill_name: str) -> list[SkillFile]:
+            async def list_files(self, skill_name: str) -> list[SkillFile]:
                 raise NotImplementedError
 
         registry = SkillsRegistry()
@@ -491,13 +468,13 @@ class TestRouting:
         registry.add_source(source)
 
         with pytest.raises(SkillExecutionError, match="does not support listing skill files"):
-            registry.list_files("memory-one")
+            await registry.list_files("memory-one")
 
-    def test_read_file_surfaces_not_implemented_as_execution_error(
+    async def test_read_file_surfaces_not_implemented_as_execution_error(
         self,
     ) -> None:
         class _NoFilesSource(_InMemorySource):
-            def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
+            async def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
                 raise NotImplementedError
 
         registry = SkillsRegistry()
@@ -515,11 +492,11 @@ class TestRouting:
         registry.add_source(source)
 
         with pytest.raises(SkillExecutionError, match="does not support reading skill files"):
-            registry.read_file("memory-one", "whatever.md")
+            await registry.read_file("memory-one", "whatever.md")
 
 
 class TestRefreshSemantics:
-    def test_refresh_delegates_to_sources_and_returns_whether_any_changed(
+    async def test_refresh_delegates_to_sources_and_returns_whether_any_changed(
         self, memory_skill: Skill
     ) -> None:
         class _RefreshableSource(_InMemorySource):
@@ -528,7 +505,7 @@ class TestRefreshSemantics:
                 self.changed = changed
                 self.refresh_calls = 0
 
-            def refresh(self) -> bool:
+            async def refresh(self) -> bool:
                 self.refresh_calls += 1
                 return self.changed
 
@@ -538,52 +515,54 @@ class TestRefreshSemantics:
         registry.add_source(changed)
         registry.add_source(unchanged)
 
-        assert registry.refresh() is True
+        assert await registry.refresh() is True
         assert changed.refresh_calls == 1
         assert unchanged.refresh_calls == 1
 
-    def test_clear_cache_delegates_to_sources(self, memory_skill: Skill) -> None:
+    async def test_clear_cache_delegates_to_sources(self, memory_skill: Skill) -> None:
         class _CacheableSource(_InMemorySource):
             def __init__(self) -> None:
                 super().__init__({memory_skill.name: memory_skill})
                 self.clear_cache_calls = 0
 
-            def clear_cache(self) -> None:
+            async def clear_cache(self) -> None:
                 self.clear_cache_calls += 1
 
         source = _CacheableSource()
         registry = SkillsRegistry()
         registry.add_source(source)
 
-        registry.clear_cache()
+        await registry.clear_cache()
 
         assert source.clear_cache_calls == 1
 
 
 class TestClearSemantics:
-    def test_clear_only_resets_filesystem_source(self, tmp_path: Path, memory_skill: Skill) -> None:
+    async def test_clear_only_resets_filesystem_source(
+        self, tmp_path: Path, memory_skill: Skill
+    ) -> None:
         _write_skill(tmp_path, "filesystem-only")
         registry = SkillsRegistry()
         registry.discover([tmp_path])
         registry.add_source(_InMemorySource({memory_skill.name: memory_skill}))
 
-        registry.clear()
+        await registry.clear()
 
-        names = {meta.name for meta in registry.list_metadata()}
+        names = {meta.name for meta in await registry.list_metadata()}
         assert names == {"memory-one"}
 
 
 class TestRegistryDiscoverDelegates:
-    def test_discover_goes_through_builtin_filesystem_source(self, tmp_path: Path) -> None:
+    async def test_discover_goes_through_builtin_filesystem_source(self, tmp_path: Path) -> None:
         _write_skill(tmp_path, "alpha")
         registry = SkillsRegistry()
         registry.discover([tmp_path])
 
         filesystem_source = registry.sources[0]
         assert isinstance(filesystem_source, FilesystemSkillSource)
-        assert filesystem_source.has_skill("alpha")
+        assert await filesystem_source.has_skill("alpha")
 
-    def test_discover_clears_cache_for_collision_detection(self, tmp_path: Path) -> None:
+    async def test_discover_surfaces_collisions(self, tmp_path: Path) -> None:
         registry = SkillsRegistry()
         memory_skill = Skill(
             name="dup",
@@ -594,11 +573,9 @@ class TestRegistryDiscoverDelegates:
         )
         registry.add_source(_InMemorySource({"dup": memory_skill}))
 
-        # Warm cache with the custom source, then introduce a filesystem
-        # collision via discover(). The next load should surface the collision.
-        registry.load_skill("dup")
+        await registry.load_skill("dup")
         _write_skill(tmp_path, "dup")
         registry.discover([tmp_path])
 
         with pytest.raises(SkillSourceCollisionError):
-            registry.load_skill("dup")
+            await registry.load_skill("dup")

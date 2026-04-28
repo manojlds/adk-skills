@@ -10,6 +10,12 @@ database schemas, ...) via :meth:`SkillsRegistry.add_source`. All read
 operations (``list_metadata``, ``load_skill``, ``read_reference``) are routed
 through the registered sources.
 
+All runtime read methods on :class:`SkillsRegistry` are coroutines because
+their underlying :class:`SkillSource` methods are coroutines. Construction,
+source management, and discovery (which only walks the local filesystem
+once at setup time) remain synchronous so that wiring code outside an event
+loop continues to work unchanged.
+
 Collisions
     If two sources expose the same skill name, the registry raises
     :class:`~adk_skills_agent.exceptions.SkillSourceCollisionError` instead of
@@ -40,17 +46,17 @@ class SkillsRegistry:
 
     The registry is the primary entry point for:
 
-    * Discovering skills from directories (metadata-only, fast)
-    * Loading full skills on-demand (when activated by an agent)
-    * Listing available skills across one or more sources
+    * Discovering skills from directories (synchronous setup-time helper)
+    * Loading full skills on-demand (when activated by an agent, async)
+    * Listing available skills across one or more sources (async)
     * Creating tools for ADK agents (:meth:`create_use_skill_tool`, etc.)
-    * Reading references and files via the owning source
+    * Reading references and files via the owning source (async)
 
     Example:
         >>> registry = SkillsRegistry()
         >>> registry.discover(["./skills", "~/.adk/skills"])
-        >>> metadata = registry.list_metadata()
-        >>> skill = registry.load_skill("pdf-processing")
+        >>> metadata = await registry.list_metadata()
+        >>> skill = await registry.load_skill("pdf-processing")
     """
 
     def __init__(self, config: SkillsConfig | None = None):
@@ -105,6 +111,9 @@ class SkillsRegistry:
     def discover(self, directories: Sequence[str | Path]) -> int:
         """Discover skills from directories using the built-in filesystem source.
 
+        This is a synchronous helper intended for setup-time use. It scans
+        the local filesystem once and returns immediately.
+
         Args:
             directories: List of directory paths to scan.
 
@@ -120,7 +129,7 @@ class SkillsRegistry:
 
     # Core reads -------------------------------------------------------------
 
-    def list_metadata(self) -> list[SkillMetadata]:
+    async def list_metadata(self) -> list[SkillMetadata]:
         """List metadata for every known skill across all sources.
 
         Raises:
@@ -131,7 +140,7 @@ class SkillsRegistry:
         collisions: list[tuple[str, str, str]] = []
 
         for source in self._sources:
-            for metadata in source.list_metadata():
+            for metadata in await source.list_metadata():
                 previous = seen.get(metadata.name)
                 if previous is None:
                     seen[metadata.name] = (source, metadata)
@@ -158,18 +167,18 @@ class SkillsRegistry:
 
         return [metadata for _, metadata in seen.values()]
 
-    def get_metadata(self, name: str) -> SkillMetadata | None:
+    async def get_metadata(self, name: str) -> SkillMetadata | None:
         """Return metadata for ``name`` or ``None`` if unknown.
 
         Raises:
             SkillSourceCollisionError: If two or more sources expose ``name``.
         """
-        source = self._find_source(name)
+        source = await self._find_source(name)
         if source is None:
             return None
-        return source.get_metadata(name)
+        return await source.get_metadata(name)
 
-    def load_skill(self, name: str) -> Skill:
+    async def load_skill(self, name: str) -> Skill:
         """Load full skill content on-demand, consulting every source.
 
         Args:
@@ -185,10 +194,10 @@ class SkillsRegistry:
             SkillNotFoundError: If no source provides the skill.
             SkillSourceCollisionError: If two or more sources expose ``name``.
         """
-        source = self._resolve_source(name)
-        return source.load_skill(name)
+        source = await self._resolve_source(name)
+        return await source.load_skill(name)
 
-    def has_skill(self, name: str) -> bool:
+    async def has_skill(self, name: str) -> bool:
         """Check if any source provides ``name``.
 
         Note:
@@ -196,40 +205,43 @@ class SkillsRegistry:
             call :meth:`load_skill` (or :meth:`list_metadata`) to surface the
             collision.
         """
-        return any(source.has_skill(name) for source in self._sources)
+        for source in self._sources:
+            if await source.has_skill(name):
+                return True
+        return False
 
     # File / reference access ------------------------------------------------
 
-    def list_files(self, skill_name: str) -> list[SkillFile]:
+    async def list_files(self, skill_name: str) -> list[SkillFile]:
         """List the files belonging to ``skill_name``.
 
         Delegates to the source that owns the skill. Sources that cannot
         enumerate their files raise :class:`SkillExecutionError`.
         """
-        source = self._resolve_source(skill_name)
+        source = await self._resolve_source(skill_name)
         try:
-            return source.list_files(skill_name)
+            return await source.list_files(skill_name)
         except NotImplementedError as e:
             raise SkillExecutionError(
                 f"Source '{source.name}' does not support listing skill files"
             ) from e
 
-    def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
+    async def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
         """Read a single file from ``skill_name`` via its owning source.
 
         ``relative_path`` is interpreted relative to the skill root. The
         returned :class:`SkillFile` has exactly one of ``text_content`` /
         ``binary_content`` populated.
         """
-        source = self._resolve_source(skill_name)
+        source = await self._resolve_source(skill_name)
         try:
-            return source.read_file(skill_name, relative_path)
+            return await source.read_file(skill_name, relative_path)
         except NotImplementedError as e:
             raise SkillExecutionError(
                 f"Source '{source.name}' does not support reading skill files"
             ) from e
 
-    def read_reference(self, skill_name: str, reference: str) -> ReferenceFile:
+    async def read_reference(self, skill_name: str, reference: str) -> ReferenceFile:
         """Read a *text* reference file from the source that owns ``skill_name``.
 
         ``reference`` is interpreted as a path relative to the skill root; a
@@ -244,18 +256,18 @@ class SkillsRegistry:
         :meth:`SkillSource.read_file` — they never see reference-path
         normalisation.
         """
-        source = self._resolve_source(skill_name)
+        source = await self._resolve_source(skill_name)
         normalized = normalize_skill_reference(reference)
         validated = validate_skill_root_relative_path(normalized)
 
         try:
-            file = source.read_file(skill_name, validated)
+            file = await source.read_file(skill_name, validated)
         except NotImplementedError as e:
             raise SkillExecutionError(
                 f"Source '{source.name}' does not support reading references"
             ) from e
         except SkillExecutionError as e:
-            hint = self._format_available_hint(source, skill_name, validated)
+            hint = await self._format_available_hint(source, skill_name, validated)
             if hint and hint not in str(e):
                 raise SkillExecutionError(f"{e}{hint}") from e
             raise
@@ -278,7 +290,9 @@ class SkillsRegistry:
         )
 
     @staticmethod
-    def _format_available_hint(source: SkillSource, skill_name: str, normalized_path: str) -> str:
+    async def _format_available_hint(
+        source: SkillSource, skill_name: str, normalized_path: str
+    ) -> str:
         """Return ``" Available: [...]"`` listing sibling files, or ``""``.
 
         Walks :meth:`SkillSource.list_files` and filters to entries sharing a
@@ -287,7 +301,7 @@ class SkillsRegistry:
         callers treat the hint as best-effort UX, never as a contract.
         """
         try:
-            files = source.list_files(skill_name)
+            files = await source.list_files(skill_name)
         except Exception:
             # Best-effort UX only: hint failures must never mask the primary
             # read_reference/read_file error.
@@ -304,7 +318,7 @@ class SkillsRegistry:
 
     # Cache / lifecycle ------------------------------------------------------
 
-    def refresh(self) -> bool:
+    async def refresh(self) -> bool:
         """Refresh all sources and return whether any source changed.
 
         The registry owns source composition, while each source owns its own
@@ -314,10 +328,10 @@ class SkillsRegistry:
         """
         changed = False
         for source in self._sources:
-            changed = source.refresh() or changed
+            changed = (await source.refresh()) or changed
         return changed
 
-    def clear_cache(self) -> None:
+    async def clear_cache(self) -> None:
         """Drop source-owned loaded-skill/content caches.
 
         Kept for compatibility with existing applications. Loaded skill
@@ -325,9 +339,9 @@ class SkillsRegistry:
         each registered source.
         """
         for source in self._sources:
-            source.clear_cache()
+            await source.clear_cache()
 
-    def clear(self) -> None:
+    async def clear(self) -> None:
         """Reset the registry's view of skills.
 
         Clears the built-in filesystem source and source-owned caches. Any
@@ -336,73 +350,53 @@ class SkillsRegistry:
         should reconstruct the registry or remove custom sources explicitly.
         """
         self._filesystem_source.clear()
-        self.clear_cache()
-
-    def __len__(self) -> int:
-        """Return the number of unique skill names across all sources.
-
-        Unlike :meth:`list_metadata`, this method is collision-tolerant and
-        de-duplicates names when multiple sources expose the same skill.
-        """
-        return len(self._available_skill_name_set())
-
-    def __contains__(self, name: str) -> bool:
-        """Return whether any source exposes ``name``.
-
-        This method is collision-tolerant; use :meth:`load_skill` or
-        :meth:`list_metadata` to surface :class:`SkillSourceCollisionError`.
-        """
-        return self.has_skill(name)
+        await self.clear_cache()
 
     def __repr__(self) -> str:
         return f"SkillsRegistry(sources={[source.name for source in self._sources]})"
 
     # Tool factories ---------------------------------------------------------
 
-    def create_use_skill_tool(self, include_skills_listing: bool = True) -> Any:
-        """Create ADK tool for skill activation.
+    def create_use_skill_tool(self, *, available_skills_xml: str | None = None) -> Any:
+        """Create the async ADK tool for skill activation.
 
-        The tool description includes an ``<available_skills>`` block listing
-        all discovered skills (when ``include_skills_listing=True``). When
-        called, the tool loads and returns the full skill instructions.
+        The returned tool is an ``async def`` coroutine that ADK awaits on
+        each invocation; it loads the requested skill from the owning source
+        and returns the full instructions plus directory hints.
 
         Args:
-            include_skills_listing: Whether to include the ``<available_skills>``
-                XML in the tool description (default: True). Set to False when
-                using prompt injection to avoid duplication.
+            available_skills_xml: Optional pre-computed ``<available_skills>``
+                XML block to embed in the tool description. Callers that want
+                this listing should obtain it once via
+                ``await registry.to_prompt_xml()`` and pass it here. When
+                ``None`` (default), no listing is embedded — pair this with
+                prompt injection (:meth:`inject_skills_prompt`) to surface
+                skills to the model.
 
         Returns:
-            Callable tool function for use with ADK agents.
+            Async callable tool function for use with ADK agents.
         """
         from adk_skills_agent.tools.use_skill import create_use_skill_tool
 
-        return create_use_skill_tool(self, include_skills_listing=include_skills_listing)
+        return create_use_skill_tool(self, available_skills_xml=available_skills_xml)
 
     def create_read_reference_tool(self) -> Any:
-        """Create ADK tool for reading skill reference files."""
+        """Create the async ADK tool for reading skill reference files."""
         from adk_skills_agent.tools.read_reference import create_read_reference_tool
 
         return create_read_reference_tool(self)
 
     # Prompt injection utilities --------------------------------------------
 
-    def to_prompt_xml(self) -> str:
+    async def to_prompt_xml(self) -> str:
         """Generate XML representation of skills for prompt injection."""
-        from adk_skills_agent.tools.use_skill import generate_available_skills_xml
+        return _format_metadata_xml(await self.list_metadata())
 
-        return generate_available_skills_xml(self)
-
-    def to_prompt_text(self) -> str:
+    async def to_prompt_text(self) -> str:
         """Generate plain-text representation of skills for prompt injection."""
-        skills_metadata = self.list_metadata()
-        if not skills_metadata:
-            return "No skills available."
-        lines = ["Available Skills:"]
-        for metadata in skills_metadata:
-            lines.append(f"- {metadata.name}: {metadata.description}")
-        return "\n".join(lines)
+        return _format_metadata_text(await self.list_metadata())
 
-    def get_skills_prompt(self, format: str = "xml") -> str:
+    async def get_skills_prompt(self, format: str = "xml") -> str:
         """Return a formatted skills prompt.
 
         Args:
@@ -411,58 +405,54 @@ class SkillsRegistry:
         Raises:
             ValueError: For any unsupported format.
         """
-        if format == "xml":
-            return self.to_prompt_xml()
-        if format == "text":
-            return self.to_prompt_text()
-        raise ValueError(f"Unsupported format: {format}. Use 'xml' or 'text'.")
+        metadata = await self.list_metadata()
+        return _format_metadata(metadata, format=format)
 
-    def inject_skills_prompt(self, instruction: str, format: str = "xml") -> str:
+    async def inject_skills_prompt(self, instruction: str, format: str = "xml") -> str:
         """Inject the skills listing into ``instruction``.
 
         Returns ``instruction`` unchanged when no skills are known.
         """
-        if len(self) == 0:
+        metadata = await self.list_metadata()
+        if not metadata:
             return instruction
-        skills_prompt = self.get_skills_prompt(format=format)
-        return f"{instruction}\n\n{skills_prompt}"
+        return f"{instruction}\n\n{_format_metadata(metadata, format=format)}"
 
     # Validation utilities --------------------------------------------------
 
-    def validate_all(self, strict: bool = True) -> dict[str, ValidationResult]:
+    async def validate_all(self, strict: bool = True) -> dict[str, ValidationResult]:
         """Validate every known skill and return a per-name result map."""
         results: dict[str, ValidationResult] = {}
-        for metadata in self.list_metadata():
+        for metadata in await self.list_metadata():
             results[metadata.name] = validate_skill_metadata(metadata, strict=strict)
         return results
 
-    def validate_skill_by_name(self, name: str, strict: bool = True) -> ValidationResult:
+    async def validate_skill_by_name(self, name: str, strict: bool = True) -> ValidationResult:
         """Validate a specific skill by name.
 
         Raises:
             SkillNotFoundError: If the skill is not known to any source.
         """
-        metadata = self.get_metadata(name)
+        metadata = await self.get_metadata(name)
         if metadata is None:
-            raise SkillNotFoundError(
-                f"Skill '{name}' not found. Available skills: {self._available_skill_names()}"
-            )
+            available = await self._available_skill_names()
+            raise SkillNotFoundError(f"Skill '{name}' not found. Available skills: {available}")
         return validate_skill_metadata(metadata, strict=strict)
 
     # Internals --------------------------------------------------------------
 
-    def _available_skill_names(self) -> list[str]:
+    async def _available_skill_names(self) -> list[str]:
         """Return sorted, collision-tolerant skill names across all sources."""
-        return sorted(self._available_skill_name_set())
+        return sorted(await self._available_skill_name_set())
 
-    def _available_skill_name_set(self) -> set[str]:
+    async def _available_skill_name_set(self) -> set[str]:
         """Return deduplicated skill names across all sources."""
         names: set[str] = set()
         for source in self._sources:
-            names.update(source.iter_names())
+            names.update(await source.iter_names())
         return names
 
-    def _resolve_source(self, name: str) -> SkillSource:
+    async def _resolve_source(self, name: str) -> SkillSource:
         """Return the single source that provides ``name``.
 
         Raises:
@@ -470,21 +460,23 @@ class SkillsRegistry:
             SkillSourceCollisionError: When two or more sources provide the
                 skill.
         """
-        source = self._find_source(name)
+        source = await self._find_source(name)
         if source is None:
-            raise SkillNotFoundError(
-                f"Skill '{name}' not found. Available skills: {self._available_skill_names()}"
-            )
+            available = await self._available_skill_names()
+            raise SkillNotFoundError(f"Skill '{name}' not found. Available skills: {available}")
         return source
 
-    def _find_source(self, name: str) -> SkillSource | None:
+    async def _find_source(self, name: str) -> SkillSource | None:
         """Return the source that provides ``name`` or ``None`` if unknown.
 
         Raises:
             SkillSourceCollisionError: When two or more sources provide the
                 skill.
         """
-        owners = [source for source in self._sources if source.has_skill(name)]
+        owners: list[SkillSource] = []
+        for source in self._sources:
+            if await source.has_skill(name):
+                owners.append(source)
         if not owners:
             return None
         if len(owners) > 1:
@@ -507,3 +499,43 @@ class SkillsRegistry:
         except ValueError:
             return f"{source.name}<{class_name}>"
         return f"{source.name}<{class_name}>@{index}"
+
+
+# Module-level prompt formatters --------------------------------------------
+
+
+def _format_metadata(metadata: list[SkillMetadata], *, format: str) -> str:
+    """Render ``metadata`` according to ``format`` (``"xml"`` or ``"text"``)."""
+    if format == "xml":
+        return _format_metadata_xml(metadata)
+    if format == "text":
+        return _format_metadata_text(metadata)
+    raise ValueError(f"Unsupported format: {format}. Use 'xml' or 'text'.")
+
+
+def _format_metadata_xml(metadata: list[SkillMetadata]) -> str:
+    """Render ``metadata`` as the legacy ``<available_skills>`` XML block."""
+    if not metadata:
+        return "<available_skills>\nNo skills available.\n</available_skills>"
+
+    parts = ["<available_skills>"]
+    for entry in metadata:
+        description = (
+            entry.description.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
+        parts.append("  <skill>")
+        parts.append(f"    <name>{entry.name}</name>")
+        parts.append(f"    <description>{description}</description>")
+        parts.append("  </skill>")
+    parts.append("</available_skills>")
+    return "\n".join(parts)
+
+
+def _format_metadata_text(metadata: list[SkillMetadata]) -> str:
+    """Render ``metadata`` as a plain-text bullet list."""
+    if not metadata:
+        return "No skills available."
+    lines = ["Available Skills:"]
+    for entry in metadata:
+        lines.append(f"- {entry.name}: {entry.description}")
+    return "\n".join(lines)

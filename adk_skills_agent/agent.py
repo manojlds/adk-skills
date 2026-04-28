@@ -1,7 +1,12 @@
 """Custom agent class with tight skills integration for Google ADK.
 
-This module provides SkillsAgent, a custom agent class that integrates
-skills discovery, validation, and tools into a single convenient interface.
+This module provides SkillsAgent, a convenience builder that wires a
+:class:`~adk_skills_agent.registry.SkillsRegistry` into an ADK
+``LlmAgent``/``Agent``. Discovery (:meth:`SkillsAgent.discover_skills`) is
+synchronous because it only walks the local filesystem, but
+:meth:`SkillsAgent.build` is asynchronous so it can call into the
+async :class:`SkillsRegistry` API for validation, prompt injection, and
+tool wiring.
 """
 
 from collections.abc import Sequence
@@ -14,30 +19,27 @@ from adk_skills_agent.registry import SkillsRegistry
 
 
 class SkillsAgent:
-    """Custom agent wrapper with tight skills integration.
+    """Convenience builder that pairs an ADK agent with a skills registry.
 
-    This class provides a convenient way to create ADK agents with skills
-    support built-in. It manages skills discovery, validation, and tool
-    creation automatically.
+    Construction is synchronous and only does setup-time work (filesystem
+    discovery via the registry). The async :meth:`build` method runs
+    validation, optional prompt injection, and tool creation against the
+    registry's async API and returns a fully wired
+    :class:`google.adk.agents.Agent`.
 
     Example:
-        >>> from google.adk.agents import Agent
         >>> from adk_skills_agent import SkillsAgent
         >>>
-        >>> # Create agent with skills
         >>> skills_agent = SkillsAgent(
         ...     name="assistant",
         ...     model="gemini-2.5-flash",
         ...     instruction="You are a helpful assistant.",
         ...     skills_directories=["./skills"],
         ... )
-        >>>
-        >>> # Get the configured ADK agent
-        >>> agent = skills_agent.build()
+        >>> agent = await skills_agent.build()
 
     Attributes:
         registry: The SkillsRegistry managing discovered skills
-        agent_config: Configuration dict for the ADK agent
     """
 
     def __init__(
@@ -62,19 +64,14 @@ class SkillsAgent:
             skills_directories: Directories to discover skills from
             skills_config: Optional SkillsConfig for customization
             include_reference_tool: Include read_reference tool (default: True)
-            validate_skills: Validate skills on discovery (default: True)
-            auto_inject_prompt: Inject skills into system prompt (default: False)
-            prompt_format: Format for prompt injection - "xml" or "text" (default: "xml")
-            **agent_kwargs: Additional arguments to pass to Agent constructor
-
-        Example:
-            >>> agent = SkillsAgent(
-            ...     name="assistant",
-            ...     model="gemini-2.5-flash",
-            ...     instruction="You are a helpful assistant.",
-            ...     skills_directories=["./skills", "~/.adk/skills"],
-            ...     validate_skills=True,
-            ... )
+            validate_skills: Validate skills during :meth:`build` (default: True)
+            auto_inject_prompt: Inject skills into the system prompt during
+                :meth:`build` (default: False). When True, the use_skill tool
+                description omits the listing to avoid duplication.
+            prompt_format: Format for prompt injection - "xml" or "text"
+                (default: "xml")
+            **agent_kwargs: Additional arguments to pass to the ADK Agent
+                constructor.
         """
         self.name = name
         self.model = model
@@ -86,9 +83,8 @@ class SkillsAgent:
         self.prompt_format = prompt_format
         self.agent_kwargs = agent_kwargs
 
-        # Create registry config
-        # Always disable strict_validation in registry so we can discover all skills
-        # and validate them in the agent if needed
+        # Always disable strict_validation in registry so we can discover all
+        # skills and validate them in build() if requested.
         if skills_config is None:
             skills_config = SkillsConfig(strict_validation=False)
 
@@ -100,19 +96,63 @@ class SkillsAgent:
     def discover_skills(self, directories: Sequence[Union[str, Path]]) -> int:
         """Discover skills from directories.
 
+        This is the synchronous filesystem walk; runtime/validation work
+        happens later in :meth:`build`.
+
         Args:
-            directories: List of directories to scan
+            directories: List of directories to scan.
 
         Returns:
-            Number of skills discovered
+            Number of skills discovered.
+        """
+        return self.registry.discover(directories)
+
+    async def get_tools(self) -> list[Any]:
+        """Get the configured tools for this agent.
+
+        When ``auto_inject_prompt`` is ``True``, the ``use_skill`` tool's
+        description omits the ``<available_skills>`` listing because it is
+        already in the system prompt.
+
+        Returns:
+            List of async tool callables (use_skill, read_reference).
+        """
+        available_skills_xml: str | None = None
+        if not self.auto_inject_prompt:
+            available_skills_xml = await self.registry.to_prompt_xml()
+
+        tools: list[Any] = [
+            self.registry.create_use_skill_tool(available_skills_xml=available_skills_xml)
+        ]
+        if self.include_reference_tool:
+            tools.append(self.registry.create_read_reference_tool())
+        return tools
+
+    async def get_instruction(self) -> str:
+        """Get the instruction/system prompt for the agent.
+
+        If ``auto_inject_prompt`` is ``True``, appends the skills listing.
+        """
+        if not self.auto_inject_prompt:
+            return self.instruction
+        return await self.registry.inject_skills_prompt(self.instruction, format=self.prompt_format)
+
+    async def build(self) -> Any:
+        """Build and return an ADK Agent with skills support.
+
+        Performs validation (if requested), prompt injection (if requested),
+        and tool wiring against the async registry API.
+
+        Returns:
+            Configured ``google.adk.agents.Agent`` instance.
 
         Raises:
-            SkillConfigError: If validation fails and validate_skills is True
+            ImportError: If ``google.adk`` is not installed.
+            SkillConfigError: If validation fails and ``validate_skills`` is
+                ``True``.
         """
-        count = self.registry.discover(directories)
-
         if self.validate_skills:
-            results = self.registry.validate_all(strict=True)
+            results = await self.registry.validate_all(strict=True)
             invalid = [name for name, result in results.items() if not result.valid]
             if invalid:
                 raise SkillConfigError(
@@ -120,76 +160,6 @@ class SkillsAgent:
                     "Set validate_skills=False to skip validation."
                 )
 
-        return count
-
-    def get_tools(self) -> list[Any]:
-        """Get all configured tools for this agent.
-
-        When auto_inject_prompt is True, the use_skill tool will not include
-        the <available_skills> listing in its description to avoid duplication.
-
-        Returns:
-            List of tool functions (use_skill, read_reference)
-
-        Example:
-            >>> agent = SkillsAgent(name="assistant", model="gemini-2.5-flash")
-            >>> tools = agent.get_tools()
-            >>> print(f"Created {len(tools)} tools")
-        """
-        # Don't include skills listing in tool if we're injecting it into prompt
-        include_listing = not self.auto_inject_prompt
-
-        tools = [self.registry.create_use_skill_tool(include_skills_listing=include_listing)]
-
-        if self.include_reference_tool:
-            tools.append(self.registry.create_read_reference_tool())
-
-        return tools
-
-    def get_instruction(self) -> str:
-        """Get the instruction/system prompt for the agent.
-
-        If auto_inject_prompt is True, appends skills listing to the instruction.
-
-        Returns:
-            Complete instruction string
-
-        Example:
-            >>> agent = SkillsAgent(
-            ...     name="assistant",
-            ...     model="gemini-2.5-flash",
-            ...     instruction="You are helpful.",
-            ...     auto_inject_prompt=True,
-            ... )
-            >>> print(agent.get_instruction())
-        """
-        instruction = self.instruction
-
-        if self.auto_inject_prompt and len(self.registry) > 0:
-            skills_prompt = self.registry.get_skills_prompt(format=self.prompt_format)
-            instruction = f"{instruction}\n\n{skills_prompt}"
-
-        return instruction
-
-    def build(self) -> Any:
-        """Build and return an ADK Agent with skills support.
-
-        Returns:
-            Configured google.adk.agents.Agent instance
-
-        Raises:
-            ImportError: If google.adk is not installed
-
-        Example:
-            >>> from adk_skills_agent import SkillsAgent
-            >>> skills_agent = SkillsAgent(
-            ...     name="assistant",
-            ...     model="gemini-2.5-flash",
-            ...     skills_directories=["./skills"],
-            ... )
-            >>> agent = skills_agent.build()
-            >>> # Use agent normally with ADK
-        """
         try:
             from google.adk.agents import Agent  # type: ignore
         except ImportError as e:
@@ -197,14 +167,17 @@ class SkillsAgent:
                 "google.adk is required to build agents. Install it with: pip install google-adk"
             ) from e
 
+        instruction = await self.get_instruction()
+        tools = await self.get_tools()
+
         return Agent(
             name=self.name,
             model=self.model,
-            instruction=self.get_instruction(),
-            tools=self.get_tools(),
+            instruction=instruction,
+            tools=tools,
             **self.agent_kwargs,
         )
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"SkillsAgent(name={self.name!r}, model={self.model!r}, skills={len(self.registry)})"
+        return f"SkillsAgent(name={self.name!r}, model={self.model!r})"

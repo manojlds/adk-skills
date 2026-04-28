@@ -5,21 +5,79 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.0] - 2026-04-27
+## [0.4.0] - 2026-04-28
+
+### Changed (breaking)
+- **All runtime read methods on `SkillSource` and `SkillsRegistry` are now
+  coroutines.** I/O-bound sources (databases, remote registries, object
+  storage) can now perform real non-blocking I/O end-to-end, instead of
+  forcing every consumer to wrap a synchronous source with `asyncio.to_thread`
+  at the call site.
+  - `SkillSource.list_metadata`, `load_skill`, `iter_names`, `has_skill`,
+    `get_metadata`, `refresh`, `clear_cache`, `list_files`, and `read_file`
+    are now `async def`.
+  - `SkillsRegistry.list_metadata`, `load_skill`, `read_reference`,
+    `list_files`, `read_file`, `validate_all`, `refresh`, `clear_cache`,
+    `to_prompt_xml`, `to_prompt_text`, `get_skills_prompt`, `iter_names`,
+    `has_skill`, and `get_metadata` are now `async def`.
+  - `SkillsAgent.get_tools`, `get_instruction`, and `build` are now
+    `async def`.
+  - The `with_skills`, `create_skills_agent`, and `inject_skills_prompt`
+    helpers in `adk_skills_agent.helpers` are now `async def`.
+  - The callables produced by `create_use_skill_tool` and
+    `create_read_reference_tool` are now `async def`. ADK already supports
+    async tool callables, so no agent-side change is required.
+- `create_use_skill_tool` no longer takes `include_skills_listing`. Callers
+  that want the available-skills listing in the tool description should pass
+  the pre-rendered XML via the new `available_skills_xml` argument:
+  `xml = await registry.to_prompt_xml(); create_use_skill_tool(registry, available_skills_xml=xml)`.
+  This avoids duplicating the async listing step inside the tool factory.
+- `SkillsRegistry.__len__` and `SkillsRegistry.__contains__` were removed
+  because the underlying lookups are now async (`__len__` and `__contains__`
+  cannot be coroutines). Replace `len(registry)` with
+  `len(await registry.list_metadata())` and `name in registry` with
+  `await registry.has_skill(name)`.
+- `SkillSource.iter_names` now returns a `list[str]` (rather than yielding an
+  iterator) so it can be implemented as a single coroutine.
 
 ### Added
-- `SkillSource.refresh()` and `SkillSource.clear_cache()` hooks let dynamic
-  sources own catalog refresh and loaded-content cache invalidation. Custom
-  `SkillSource` implementations backed by databases, remote registries, or
-  other mutable stores should override these hooks when they need explicit
-  freshness control.
+- Module-level `_format_metadata_xml` / `_format_metadata_text` helpers in
+  `adk_skills_agent.registry` so prompt-shape utilities can be reused without
+  re-running the metadata gather.
+- `pytest-asyncio>=0.23` dev dependency, with `asyncio_mode = "auto"` in
+  `pyproject.toml` so async tests do not need explicit decorators.
+
+### Migration notes
+- `with_skills(...)`, `create_skills_agent(...)`, and `SkillsAgent.build(...)`
+  are now coroutines. Wherever you build agents at module top-level, switch
+  the call site to `asyncio.run(create_skills_agent(...))` (or `await ...`
+  from inside another async context).
+- ADK's `before_agent_callback` and tool callables already support `async
+  def`, so wiring the new async tools into an ADK agent does not require any
+  additional adapter — return them directly from your tool list.
+- Custom `SkillSource` implementations must change their method signatures
+  from `def` to `async def` for the runtime methods listed above. Sources
+  whose underlying I/O is synchronous (filesystem, in-memory, sqlite3) can
+  wrap blocking calls with `asyncio.to_thread(...)`; sources backed by
+  asyncio-aware drivers (`asyncpg`, `aiomysql`, `httpx.AsyncClient`, …) can
+  call into them directly.
+
+## [0.3.0] - 2026-04-27
 
 ### Changed
-- `SkillsRegistry.load_skill()` no longer caches loaded `Skill` instances. The
-  registry now delegates every load to the owning source so each source can
-  apply its own freshness policy. Callers that relied on repeated
-  `registry.load_skill(name)` calls returning the same object identity should
-  adjust those checks.
+- Skill freshness is now owned by each source. `SkillsRegistry.refresh()`
+  delegates to every registered source's own `refresh()` and returns whether
+  any source reported a change. Sources that maintain caches (filesystem,
+  database, …) are responsible for invalidating just the entries that became
+  stale, instead of clearing the registry-wide cache wholesale.
+- `FilesystemSkillSource.refresh()` is now rollback-safe: if rediscovery
+  raises, the previously discovered metadata and skill cache are preserved
+  unchanged so callers continue to see a consistent view.
+
+### Added
+- Documentation of the new source-owned refresh contract in the `SkillSource`
+  base class so custom source authors know what `refresh()` is expected to
+  return and which caches they own.
 
 ## [0.2.0] - 2026-04-22
 
@@ -27,12 +85,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New `SkillSource` abstract base class (`adk_skills_agent.core.source.SkillSource`)
   defining a pluggable interface for skill providers. Implementations are expected
   to provide `list_metadata()` and `load_skill()` at minimum, and may optionally
-  implement `list_files()` / `read_file()` when their underlying storage supports
-  those operations.
+  implement `list_files()` / `read_file()` / `run_script()` when their underlying
+  storage supports those operations.
 - `FilesystemSkillSource` (`adk_skills_agent.sources.filesystem`) — the built-in
   source backing `SkillsRegistry.discover(...)`. Encapsulates the existing
-  filesystem discovery and file-access logic.
-- `ReferenceFile` dataclass returned by `SkillsRegistry.read_reference()`.
+  filesystem discovery, file access, and script-execution logic.
+- `ReferenceFile` and `ScriptResult` dataclasses returned by
+  `SkillsRegistry.read_reference()` / `SkillsRegistry.run_script()`.
 - New `SkillFile` dataclass and generic file-access API
   (`SkillSource.list_files(skill_name)` and
   `SkillSource.read_file(skill_name, relative_path)`) that lets a source expose
@@ -58,7 +117,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SkillsRegistry` is now composed of one or more `SkillSource` instances
   instead of maintaining a private metadata dictionary directly. The public API
   (`discover`, `list_metadata`, `load_skill`, `read_reference`, `list_files`,
-  `read_file`, `validate_all`, prompt/tool helpers) is preserved.
+  `read_file`, `run_script`, `validate_all`, prompt/tool helpers) is preserved.
 - `read_reference` is now implemented at the registry level on top of
   `SkillSource.read_file`. The registry owns reference-path normalisation
   (a bare filename with no `/` is still resolved under `references/`;
@@ -74,8 +133,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Skill.skill_dir / reference.path`.
 - Skill lookups now fail with `SkillSourceCollisionError` when two sources
   expose the same skill name, instead of silently preferring one source.
-- `create_read_reference_tool` delegates to `SkillsRegistry.read_reference()`,
-  which routes to the source that owns the skill.
+- `create_read_reference_tool` and `create_run_script_tool` delegate to
+  `SkillsRegistry.read_reference()` / `SkillsRegistry.run_script()`, which in
+  turn route to the source that owns the skill.
 - `SkillsRegistry.clear()` now only clears the built-in filesystem source and
   the internal skill cache; any custom sources registered via `add_source(...)`
   are left untouched. Use `remove_source(...)` to unregister them explicitly.
@@ -108,15 +168,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SkillSource.read_reference` is no longer part of the abstract base class.
   Custom sources should implement `SkillSource.read_file` instead; the
   registry provides the text-only `read_reference` wrapper on top.
-- `run_script` support has been removed for now. The following symbols and
-  methods no longer exist:
-  - `SkillSource.run_script`
-  - `SkillsRegistry.run_script`
-  - `SkillsRegistry.create_run_script_tool`
-  - `adk_skills_agent.tools.run_script`
-  - `ScriptResult`
-  - `SkillsConfig.enable_scripts`, `SkillsConfig.script_timeout`, and
-    `SkillsConfig.sandbox_mode`
 
 ### Migration notes
 - **Rename any ``skill.md`` to ``SKILL.md``.** Rename the files in place

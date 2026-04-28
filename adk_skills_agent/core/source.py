@@ -17,6 +17,14 @@ subclassing this abstract base class and plugging into a registry via
 ``tests/integration/test_sqlite_skill_source.py`` in the source tree for a
 worked multi-file SQLite-backed source.
 
+All runtime read methods on :class:`SkillSource` are ``async`` so that
+sources backed by remote/network I/O (databases, HTTP registries, object
+storage) can perform real non-blocking I/O. Sources whose underlying
+operations are inherently synchronous (the built-in
+:class:`~adk_skills_agent.sources.filesystem.FilesystemSkillSource`, for
+example) typically wrap their internals with :func:`asyncio.to_thread` so
+they remain event-loop friendly without a separate sync interface.
+
 Note:
     Not every source supports every capability. File access may or may not be
     available depending on how the source stores auxiliary content. Sources
@@ -32,7 +40,6 @@ Note:
 from __future__ import annotations
 
 import abc
-from collections.abc import Iterator
 from dataclasses import dataclass
 
 from adk_skills_agent.core.models import Skill, SkillMetadata
@@ -134,12 +141,19 @@ class SkillSource(abc.ABC):
     Subclasses should set :attr:`name` to a short, human-readable identifier
     (for example ``"filesystem"`` or ``"registry"``); it is used in error
     messages when multiple sources expose the same skill name.
+
+    All runtime read methods are coroutines. Sources whose underlying
+    operations are inherently synchronous can implement them as ``async def``
+    methods that wrap blocking calls with :func:`asyncio.to_thread`; the
+    built-in
+    :class:`~adk_skills_agent.sources.filesystem.FilesystemSkillSource`
+    follows this pattern.
     """
 
     name: str = "source"
 
     @abc.abstractmethod
-    def list_metadata(self) -> list[SkillMetadata]:
+    async def list_metadata(self) -> list[SkillMetadata]:
         """Return metadata for every skill this source currently provides.
 
         The registry calls this method whenever it needs a fresh view of the
@@ -148,7 +162,7 @@ class SkillSource(abc.ABC):
         """
 
     @abc.abstractmethod
-    def load_skill(self, name: str) -> Skill:
+    async def load_skill(self, name: str) -> Skill:
         """Return the fully loaded :class:`Skill` for ``name``.
 
         Raises:
@@ -156,39 +170,41 @@ class SkillSource(abc.ABC):
                 provided by this source.
         """
 
-    def iter_names(self) -> Iterator[str]:
-        """Yield skill names currently provided by this source.
+    async def iter_names(self) -> list[str]:
+        """Return skill names currently provided by this source.
 
-        The default implementation iterates :meth:`list_metadata`. Subclasses
-        should override this when they can enumerate names more cheaply than
-        materializing full metadata objects (for example ``SELECT name`` in a
-        database-backed source).
+        The default implementation builds the list from :meth:`list_metadata`.
+        Subclasses should override this when they can enumerate names more
+        cheaply than materializing full metadata objects (for example
+        ``SELECT name`` in a database-backed source).
         """
-        for metadata in self.list_metadata():
-            yield metadata.name
+        return [metadata.name for metadata in await self.list_metadata()]
 
-    def has_skill(self, name: str) -> bool:
+    async def has_skill(self, name: str) -> bool:
         """Return ``True`` if this source provides a skill called ``name``.
 
         The default implementation iterates :meth:`iter_names`. Subclasses
         should override this when a cheaper existence check is available (for
         example a ``SELECT 1`` against the database).
         """
-        return any(skill_name == name for skill_name in self.iter_names())
+        for skill_name in await self.iter_names():
+            if skill_name == name:
+                return True
+        return False
 
-    def get_metadata(self, name: str) -> SkillMetadata | None:
+    async def get_metadata(self, name: str) -> SkillMetadata | None:
         """Return metadata for ``name`` or ``None`` if unknown.
 
         The default implementation scans :meth:`list_metadata`; subclasses
         should override this when they can do a direct lookup (for example an
         indexed query or an in-memory metadata dict).
         """
-        for metadata in self.list_metadata():
+        for metadata in await self.list_metadata():
             if metadata.name == name:
                 return metadata
         return None
 
-    def refresh(self) -> bool:
+    async def refresh(self) -> bool:
         """Refresh any source-owned indexes or caches.
 
         Returns:
@@ -201,7 +217,7 @@ class SkillSource(abc.ABC):
         """
         return False
 
-    def clear_cache(self) -> None:
+    async def clear_cache(self) -> None:
         """Drop any source-owned loaded-skill/content caches.
 
         The registry calls this as a compatibility hook for applications that
@@ -210,7 +226,7 @@ class SkillSource(abc.ABC):
         """
         return None
 
-    def list_files(self, skill_name: str) -> list[SkillFile]:
+    async def list_files(self, skill_name: str) -> list[SkillFile]:
         """Return metadata for every file belonging to ``skill_name``.
 
         Implementations should return a :class:`SkillFile` for each file in
@@ -226,7 +242,7 @@ class SkillSource(abc.ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not support listing skill files")
 
-    def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
+    async def read_file(self, skill_name: str, relative_path: str) -> SkillFile:
         """Read a single file from a skill package.
 
         ``relative_path`` is interpreted relative to the skill root and should
