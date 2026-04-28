@@ -5,6 +5,8 @@ callables, so registering it on an :class:`~google.adk.agents.LlmAgent`
 yields a fully non-blocking skill-activation path.
 """
 
+from __future__ import annotations
+
 from collections.abc import Awaitable
 from typing import TYPE_CHECKING, Any, Callable
 
@@ -14,7 +16,7 @@ if TYPE_CHECKING:
     from adk_skills_agent.registry import SkillsRegistry
 
 
-async def generate_available_skills_xml(registry: "SkillsRegistry") -> str:
+async def generate_available_skills_xml(registry: SkillsRegistry) -> str:
     """Generate the ``<available_skills>`` XML block from registry metadata.
 
     Use this once at agent setup if you want to bake the listing into the
@@ -37,7 +39,7 @@ async def generate_available_skills_xml(registry: "SkillsRegistry") -> str:
 
 
 def create_use_skill_tool(
-    registry: "SkillsRegistry",
+    registry: SkillsRegistry,
     *,
     available_skills_xml: str | None = None,
 ) -> Callable[[str], Awaitable[dict[str, Any]]]:
