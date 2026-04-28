@@ -7,9 +7,11 @@ skills support to existing agents. The runtime helpers
 :class:`SkillsRegistry` API is async.
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 from adk_skills_agent.core.models import SkillsConfig
 from adk_skills_agent.registry import SkillsRegistry
@@ -17,8 +19,8 @@ from adk_skills_agent.registry import SkillsRegistry
 
 async def with_skills(
     agent: Any,
-    directories: Sequence[Union[str, Path]],
-    config: Optional[SkillsConfig] = None,
+    directories: Sequence[str | Path],
+    config: SkillsConfig | None = None,
     include_reference_tool: bool = True,
     auto_inject_prompt: bool = False,
     prompt_format: str = "xml",
@@ -88,7 +90,7 @@ async def create_skills_agent(
     name: str,
     model: str,
     instruction: str = "",
-    skills_directories: Optional[Sequence[Union[str, Path]]] = None,
+    skills_directories: Sequence[str | Path] | None = None,
     **kwargs: Any,
 ) -> Any:
     """Create an ADK agent with skills support in one async call.
@@ -130,10 +132,10 @@ async def create_skills_agent(
 
 async def inject_skills_prompt(
     instruction: str,
-    directories: Optional[Sequence[Union[str, Path]]] = None,
+    directories: Sequence[str | Path] | None = None,
     format: str = "xml",
-    config: Optional[SkillsConfig] = None,
-    registry: Optional[SkillsRegistry] = None,
+    config: SkillsConfig | None = None,
+    registry: SkillsRegistry | None = None,
 ) -> str:
     """Inject skills listing into an instruction/system prompt.
 

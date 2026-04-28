@@ -9,9 +9,11 @@ async :class:`SkillsRegistry` API for validation, prompt injection, and
 tool wiring.
 """
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any
 
 from adk_skills_agent.core.models import SkillsConfig
 from adk_skills_agent.exceptions import SkillConfigError
@@ -47,8 +49,8 @@ class SkillsAgent:
         name: str,
         model: str,
         instruction: str = "",
-        skills_directories: Optional[Sequence[Union[str, Path]]] = None,
-        skills_config: Optional[SkillsConfig] = None,
+        skills_directories: Sequence[str | Path] | None = None,
+        skills_config: SkillsConfig | None = None,
         include_reference_tool: bool = True,
         validate_skills: bool = True,
         auto_inject_prompt: bool = False,
@@ -93,7 +95,7 @@ class SkillsAgent:
         if self.skills_directories:
             self.discover_skills(self.skills_directories)
 
-    def discover_skills(self, directories: Sequence[Union[str, Path]]) -> int:
+    def discover_skills(self, directories: Sequence[str | Path]) -> int:
         """Discover skills from directories.
 
         This is the synchronous filesystem walk; runtime/validation work
