@@ -58,6 +58,8 @@ class FilesystemSkillSource(SkillSource):
         self._directories: list[Path] = []
         self._metadata: dict[str, SkillMetadata] = {}
         self._skill_cache: dict[str, Skill] = {}
+        self._state_lock = asyncio.Lock()
+        self._generation = 0
         self._strict_validation = strict_validation
 
         if directories:
@@ -82,7 +84,14 @@ class FilesystemSkillSource(SkillSource):
         paths = [Path(d).expanduser().resolve() for d in directories]
         self._directories.extend(paths)
 
-        for metadata in discover_skills(paths):
+        for metadata in self._discover_metadata(paths).values():
+            self._metadata.setdefault(metadata.name, metadata)
+
+        return len(self._metadata)
+
+    def _discover_metadata(self, paths: Sequence[Path]) -> dict[str, SkillMetadata]:
+        metadata_by_name: dict[str, SkillMetadata] = {}
+        for metadata in discover_skills(list(paths)):
             if self._strict_validation:
                 result = validate_skill_metadata(metadata, strict=True)
                 if not result.valid:
@@ -91,60 +100,73 @@ class FilesystemSkillSource(SkillSource):
             # Within a single filesystem source we silently skip duplicates
             # (first directory wins). Collisions across sources are handled
             # by the registry, which hard-fails.
-            self._metadata.setdefault(metadata.name, metadata)
-
-        return len(self._metadata)
+            metadata_by_name.setdefault(metadata.name, metadata)
+        return metadata_by_name
 
     async def list_metadata(self) -> list[SkillMetadata]:
-        return list(self._metadata.values())
+        async with self._state_lock:
+            return list(self._metadata.values())
 
     async def has_skill(self, name: str) -> bool:
-        return name in self._metadata
+        async with self._state_lock:
+            return name in self._metadata
 
     async def iter_names(self) -> list[str]:
-        return list(self._metadata)
+        async with self._state_lock:
+            return list(self._metadata)
 
     async def get_metadata(self, name: str) -> SkillMetadata | None:
-        return self._metadata.get(name)
+        async with self._state_lock:
+            return self._metadata.get(name)
 
     async def refresh(self) -> bool:
-        return await asyncio.to_thread(self._refresh_sync)
-
-    def _refresh_sync(self) -> bool:
-        previous_metadata = dict(self._metadata)
-        previous_directories = list(self._directories)
-        previous_skill_cache = dict(self._skill_cache)
-        had_cached_skills = bool(self._skill_cache)
-
-        if self._directories:
+        async with self._state_lock:
             directories = list(self._directories)
-            self._metadata.clear()
-            self._directories.clear()
-            try:
-                self.add_directories(directories)
-            except Exception:
-                self._metadata = previous_metadata
-                self._directories = previous_directories
-                self._skill_cache = previous_skill_cache
-                raise
 
-        self._skill_cache.clear()
-        return had_cached_skills or self._metadata != previous_metadata
+        refreshed_metadata: dict[str, SkillMetadata] | None = None
+        if directories:
+            refreshed_metadata = await asyncio.to_thread(self._discover_metadata, directories)
+
+        async with self._state_lock:
+            previous_metadata = dict(self._metadata)
+            had_cached_skills = bool(self._skill_cache)
+
+            if refreshed_metadata is not None:
+                self._metadata = refreshed_metadata
+                self._directories = directories
+
+            self._skill_cache.clear()
+            self._generation += 1
+            return had_cached_skills or self._metadata != previous_metadata
 
     async def load_skill(self, name: str) -> Skill:
-        if name in self._skill_cache:
-            return self._skill_cache[name]
+        while True:
+            async with self._state_lock:
+                cached = self._skill_cache.get(name)
+                if cached is not None:
+                    return cached
 
-        metadata = self._metadata.get(name)
-        if metadata is None:
-            raise SkillNotFoundError(
-                f"Skill '{name}' not found in filesystem source. "
-                f"Available skills: {list(self._metadata)}"
-            )
+                metadata = self._metadata.get(name)
+                generation = self._generation
+                available = list(self._metadata)
 
-        skill = await asyncio.to_thread(parse_full, metadata.location)
-        self._skill_cache[name] = skill
-        return skill
+            if metadata is None:
+                raise SkillNotFoundError(
+                    f"Skill '{name}' not found in filesystem source. Available skills: {available}"
+                )
+
+            skill = await asyncio.to_thread(parse_full, metadata.location)
+
+            async with self._state_lock:
+                cached = self._skill_cache.get(name)
+                if cached is not None:
+                    return cached
+                # Refresh/cache-clear may have landed while parse_full was in
+                # a worker thread; never cache a result from an older catalog.
+                if generation != self._generation or self._metadata.get(name) != metadata:
+                    continue
+                self._skill_cache[name] = skill
+                return skill
 
     async def list_files(self, skill_name: str) -> list[SkillFile]:
         try:
@@ -254,13 +276,16 @@ class FilesystemSkillSource(SkillSource):
 
     async def clear_cache(self) -> None:
         """Drop any cached fully-loaded skills."""
-        self._skill_cache.clear()
+        async with self._state_lock:
+            self._skill_cache.clear()
+            self._generation += 1
 
     def clear(self) -> None:
         """Forget all discovered skills and directories."""
         self._metadata.clear()
         self._skill_cache.clear()
         self._directories.clear()
+        self._generation += 1
 
 
 def _classify_bytes(data: bytes) -> tuple[str | None, bytes | None]:

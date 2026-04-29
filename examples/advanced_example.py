@@ -8,6 +8,7 @@ This example showcases:
 4. Helper functions (with_skills, create_skills_agent, inject_skills_prompt)
 """
 
+import asyncio
 from pathlib import Path
 
 from adk_skills_agent import (
@@ -17,7 +18,7 @@ from adk_skills_agent import (
 )
 
 
-def demo_prompt_injection() -> None:
+async def demo_prompt_injection() -> None:
     """Demonstrate prompt injection utilities."""
     print("=" * 60)
     print("1. Prompt Injection Utilities")
@@ -31,21 +32,21 @@ def demo_prompt_injection() -> None:
     # XML format (default)
     print("XML Format:")
     print("-" * 60)
-    xml_prompt = registry.to_prompt_xml()
+    xml_prompt = await registry.to_prompt_xml()
     print(xml_prompt)
     print()
 
     # Text format
     print("Text Format:")
     print("-" * 60)
-    text_prompt = registry.to_prompt_text()
+    text_prompt = await registry.to_prompt_text()
     print(text_prompt)
     print()
 
     # Using get_skills_prompt with format parameter
     print("Using get_skills_prompt():")
     print("-" * 60)
-    prompt = registry.get_skills_prompt(format="xml")
+    prompt = await registry.get_skills_prompt(format="xml")
     print(f"Length: {len(prompt)} characters")
     print()
 
@@ -53,14 +54,14 @@ def demo_prompt_injection() -> None:
     print("Using inject_skills_prompt() method:")
     print("-" * 60)
     base_instruction = "You are a helpful assistant."
-    full_instruction = registry.inject_skills_prompt(base_instruction, format="xml")
+    full_instruction = await registry.inject_skills_prompt(base_instruction, format="xml")
     print(f"Base instruction: {base_instruction}")
     print(f"Full instruction length: {len(full_instruction)} characters")
     print(f"Skills injected: {'<available_skills>' in full_instruction}")
     print()
 
 
-def demo_validation() -> None:
+async def demo_validation() -> None:
     """Demonstrate skills validation features."""
     print("=" * 60)
     print("2. Skills Validation")
@@ -73,7 +74,7 @@ def demo_validation() -> None:
 
     # Validate all skills
     print("Validating all skills...")
-    results = registry.validate_all(strict=True)
+    results = await registry.validate_all(strict=True)
 
     for name, result in results.items():
         status = "✓ Valid" if result.valid else "✗ Invalid"
@@ -90,16 +91,16 @@ def demo_validation() -> None:
     print()
 
     # Validate specific skill
-    if "calculator" in registry:
+    if await registry.has_skill("calculator"):
         print("Validating 'calculator' skill...")
-        result = registry.validate_skill_by_name("calculator", strict=True)
+        result = await registry.validate_skill_by_name("calculator", strict=True)
         print(f"  Valid: {result.valid}")
         print(f"  Errors: {len(result.errors)}")
         print(f"  Warnings: {len(result.warnings)}")
         print()
 
 
-def demo_skills_agent() -> None:
+async def demo_skills_agent() -> None:
     """Demonstrate SkillsAgent class."""
     print("=" * 60)
     print("3. SkillsAgent Custom Agent Class")
@@ -121,22 +122,22 @@ def demo_skills_agent() -> None:
     )
 
     print(f"  ✓ Agent created: {agent}")
-    print(f"  ✓ Skills discovered: {len(agent.registry)}")
-    print(f"  ✓ Tools available: {len(agent.get_tools())}")
+    print(f"  ✓ Skills discovered: {len(await agent.registry.list_metadata())}")
+    print(f"  ✓ Tools available: {len(await agent.get_tools())}")
     print()
 
     # Get instruction with injected skills
     print("Generated instruction (first 300 chars):")
     print("-" * 60)
-    instruction = agent.get_instruction()
+    instruction = await agent.get_instruction()
     print(instruction[:300] + "...")
     print()
 
     # Note: To build the actual ADK agent, google.adk must be installed:
-    # agent_instance = agent.build()
+    # agent_instance = await agent.build()
 
 
-def demo_helper_functions() -> None:
+async def demo_helper_functions() -> None:
     """Demonstrate helper functions."""
     print("=" * 60)
     print("4. Helper Functions")
@@ -149,7 +150,7 @@ def demo_helper_functions() -> None:
     print("Using inject_skills_prompt() - Pattern 1 (directory-based):")
     print("-" * 60)
     base_instruction = "You are a helpful assistant."
-    full_instruction = inject_skills_prompt(
+    full_instruction = await inject_skills_prompt(
         base_instruction, directories=[skills_dir], format="text"
     )
     print(full_instruction)
@@ -162,12 +163,12 @@ def demo_helper_functions() -> None:
     registry.discover([skills_dir])
 
     # Via helper function
-    full_instruction_helper = inject_skills_prompt(
+    full_instruction_helper = await inject_skills_prompt(
         base_instruction, registry=registry, format="text"
     )
 
     # Or via registry method (more direct)
-    full_instruction_method = registry.inject_skills_prompt(base_instruction, format="text")
+    full_instruction_method = await registry.inject_skills_prompt(base_instruction, format="text")
 
     print("Both patterns produce identical results:")
     print(f"  Helper function: {len(full_instruction_helper)} chars")
@@ -186,7 +187,7 @@ def demo_helper_functions() -> None:
     print("Example usage:")
     print("  from google.adk.agents import Agent")
     print("  agent = Agent(name='assistant', model='gemini-2.5-flash')")
-    print("  agent = with_skills(agent, ['./skills'])")
+    print("  agent = await with_skills(agent, ['./skills'])")
     print()
 
     # create_skills_agent helper
@@ -195,7 +196,7 @@ def demo_helper_functions() -> None:
     print("Note: create_skills_agent() creates an ADK agent with skills in one call.")
     print()
     print("Example usage:")
-    print("  agent = create_skills_agent(")
+    print("  agent = await create_skills_agent(")
     print("      name='assistant',")
     print("      model='gemini-2.5-flash',")
     print("      skills_directories=['./skills'],")
@@ -218,11 +219,12 @@ def demo_integration_patterns() -> None:
     print()
     print("  registry = SkillsRegistry()")
     print("  registry.discover(['./skills'])")
+    print("  available_skills_xml = await registry.to_prompt_xml()")
     print("  agent = Agent(")
     print("      name='assistant',")
     print("      model='gemini-2.5-flash',")
     print("      tools=[")
-    print("          registry.create_use_skill_tool(),")
+    print("          registry.create_use_skill_tool(available_skills_xml=available_skills_xml),")
     print("          registry.create_read_reference_tool(),")
     print("      ]")
     print("  )")
@@ -232,23 +234,24 @@ def demo_integration_patterns() -> None:
     print("-" * 60)
     print("Skills are injected directly into system prompt:")
     print()
-    print("  agent = SkillsAgent(")
+    print("  skills_agent = SkillsAgent(")
     print("      name='assistant',")
     print("      model='gemini-2.5-flash',")
     print("      skills_directories=['./skills'],")
     print("      auto_inject_prompt=True,")
-    print("  ).build()")
+    print("  )")
+    print("  agent = await skills_agent.build()")
     print()
 
     print("Important: Choose ONE pattern, not both!")
     print("-" * 60)
     print("Listing skills in both prompt AND tool description wastes tokens.")
-    print("SkillsAgent automatically uses include_skills_listing=False when")
+    print("SkillsAgent automatically omits available_skills_xml when")
     print("auto_inject_prompt=True to avoid duplication.")
     print()
 
 
-def main() -> None:
+async def main() -> None:
     """Run all demonstrations."""
     print()
     print("╔" + "═" * 58 + "╗")
@@ -259,10 +262,10 @@ def main() -> None:
     print()
 
     try:
-        demo_prompt_injection()
-        demo_validation()
-        demo_skills_agent()
-        demo_helper_functions()
+        await demo_prompt_injection()
+        await demo_validation()
+        await demo_skills_agent()
+        await demo_helper_functions()
         demo_integration_patterns()
 
         print("=" * 60)
@@ -285,4 +288,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

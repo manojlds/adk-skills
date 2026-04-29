@@ -40,9 +40,6 @@ dev = [
     "types-pyyaml>=6.0",
 ]
 
-[project.scripts]
-adk-skills = "adk_skills_agent.cli:main"
-
 [project.urls]
 Homepage = "https://github.com/manojlds/adk-skills"
 Documentation = "https://github.com/manojlds/adk-skills"
