@@ -38,6 +38,7 @@ class FilesystemSkillSource(SkillSource):
     """
 
     name = "filesystem"
+    _MAX_REFRESH_RETRIES = 10
 
     def __init__(
         self,
@@ -91,6 +92,7 @@ class FilesystemSkillSource(SkillSource):
         for metadata in self._discover_metadata(paths).values():
             self._metadata.setdefault(metadata.name, metadata)
 
+        self._generation += 1
         return len(self._metadata)
 
     def _discover_metadata(self, paths: Sequence[Path]) -> dict[str, SkillMetadata]:
@@ -124,7 +126,7 @@ class FilesystemSkillSource(SkillSource):
             return self._metadata.get(name)
 
     async def refresh(self) -> bool:
-        while True:
+        for _attempt in range(self._MAX_REFRESH_RETRIES):
             async with self._state_lock:
                 directories = list(self._directories)
 
@@ -144,6 +146,12 @@ class FilesystemSkillSource(SkillSource):
                 self._skill_cache.clear()
                 self._generation += 1
                 return had_cached_skills or self._metadata != previous_metadata
+
+        raise SkillExecutionError(
+            "Filesystem skill refresh could not stabilize because directories "
+            "changed repeatedly during discovery. Retry refresh after discovery "
+            "updates finish."
+        )
 
     async def load_skill(self, name: str) -> Skill:
         while True:
