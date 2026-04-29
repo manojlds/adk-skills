@@ -143,6 +143,47 @@ class TestFilesystemSourceLoading:
         assert "Updated instructions" in skill.instructions
         assert await source.load_skill("alpha") is skill
 
+    async def test_refresh_preserves_directories_added_during_scan(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        first = tmp_path / "first"
+        first.mkdir()
+        second = tmp_path / "second"
+        second.mkdir()
+        _write_skill(first, "alpha")
+        _write_skill(second, "beta")
+
+        source = FilesystemSkillSource([first])
+
+        from adk_skills_agent.sources import filesystem
+
+        real_discover_skills = filesystem.discover_skills
+        refresh_started = threading.Event()
+        release_refresh = threading.Event()
+        blocked_refresh_once = False
+        main_thread = threading.current_thread()
+
+        def _discover_then_wait(paths: list[Path]):
+            nonlocal blocked_refresh_once
+            if threading.current_thread() is not main_thread and not blocked_refresh_once:
+                blocked_refresh_once = True
+                refresh_started.set()
+                if not release_refresh.wait(timeout=5):
+                    raise TimeoutError("test did not release blocked refresh")
+            return real_discover_skills(paths)
+
+        monkeypatch.setattr(filesystem, "discover_skills", _discover_then_wait)
+
+        refresh_task = asyncio.create_task(source.refresh())
+        assert await asyncio.to_thread(refresh_started.wait, 5)
+
+        source.add_directories([second])
+        release_refresh.set()
+
+        await refresh_task
+        assert source.directories == [first.resolve(), second.resolve()]
+        assert {metadata.name for metadata in await source.list_metadata()} == {"alpha", "beta"}
+
     async def test_refresh_restores_previous_state_when_discovery_fails(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

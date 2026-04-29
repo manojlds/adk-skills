@@ -73,6 +73,10 @@ class FilesystemSkillSource(SkillSource):
     def add_directories(self, directories: Sequence[str | Path]) -> int:
         """Scan additional directories and index any skills found.
 
+        This is a synchronous setup-time helper. Runtime reads are concurrency
+        guarded, but callers should avoid mutating the discovered directory set
+        from another OS thread while async reads are active.
+
         Args:
             directories: Directories to scan. ``~`` expansion and resolution
                 mirrors the legacy :meth:`SkillsRegistry.discover` behaviour.
@@ -120,24 +124,26 @@ class FilesystemSkillSource(SkillSource):
             return self._metadata.get(name)
 
     async def refresh(self) -> bool:
-        async with self._state_lock:
-            directories = list(self._directories)
+        while True:
+            async with self._state_lock:
+                directories = list(self._directories)
 
-        refreshed_metadata: dict[str, SkillMetadata] | None = None
-        if directories:
             refreshed_metadata = await asyncio.to_thread(self._discover_metadata, directories)
 
-        async with self._state_lock:
-            previous_metadata = dict(self._metadata)
-            had_cached_skills = bool(self._skill_cache)
+            async with self._state_lock:
+                if self._directories != directories:
+                    # discover()/add_directories() ran while we were scanning.
+                    # Retry against the new full directory set rather than
+                    # overwriting those additions with the stale snapshot.
+                    continue
 
-            if refreshed_metadata is not None:
+                previous_metadata = dict(self._metadata)
+                had_cached_skills = bool(self._skill_cache)
+
                 self._metadata = refreshed_metadata
-                self._directories = directories
-
-            self._skill_cache.clear()
-            self._generation += 1
-            return had_cached_skills or self._metadata != previous_metadata
+                self._skill_cache.clear()
+                self._generation += 1
+                return had_cached_skills or self._metadata != previous_metadata
 
     async def load_skill(self, name: str) -> Skill:
         while True:
@@ -281,7 +287,11 @@ class FilesystemSkillSource(SkillSource):
             self._generation += 1
 
     def clear(self) -> None:
-        """Forget all discovered skills and directories."""
+        """Forget all discovered skills and directories.
+
+        This synchronous setup-time helper should not be called from another OS
+        thread while async runtime reads are active.
+        """
         self._metadata.clear()
         self._skill_cache.clear()
         self._directories.clear()
