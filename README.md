@@ -641,6 +641,6 @@ Apache 2.0 License - see [LICENSE](LICENSE) file for details
 
 ---
 
-**Status**: MVP Complete | **Version**: 0.4.0 | **Python**: 3.9+
+**Status**: MVP Complete | **Version**: 0.4.1 | **Python**: 3.9+
 
 For questions or support, please open an issue on GitHub.

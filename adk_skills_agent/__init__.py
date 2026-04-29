@@ -23,7 +23,7 @@ filesystem discovery remain synchronous setup-time helpers; only runtime
 catalog/file access requires ``await``.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 from .agent import SkillsAgent
 from .core.models import Skill, SkillMetadata, SkillsConfig, ValidationResult

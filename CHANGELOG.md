@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-04-29
+
+### Fixed
+- Removed the broken `adk-skills` console script declaration so installs no
+  longer expose a CLI entry point that imports a missing module.
+- Updated README and examples to use the async-only `0.4.x` APIs consistently.
+- Prevented `FilesystemSkillSource.load_skill()` from recaching stale parsed
+  skills after a concurrent refresh clears the cache.
+- Made `FilesystemSkillSource` state mutations thread-safe and bounded retry
+  loops for catalogs that keep changing during refresh or load operations.
+
 ## [0.4.0] - 2026-04-28
 
 ### Changed (breaking)

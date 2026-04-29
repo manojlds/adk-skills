@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adk-skills-agent"
-version = "0.4.0"
+version = "0.4.1"
 description = "Agent Skills support for Google's Agent Development Kit (ADK)"
 authors = [
     {name = "ADK Skills Contributors"}
