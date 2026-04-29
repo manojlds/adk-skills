@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import mimetypes
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -39,6 +40,7 @@ class FilesystemSkillSource(SkillSource):
 
     name = "filesystem"
     _MAX_REFRESH_RETRIES = 10
+    _MAX_LOAD_RETRIES = 10
 
     def __init__(
         self,
@@ -59,7 +61,7 @@ class FilesystemSkillSource(SkillSource):
         self._directories: list[Path] = []
         self._metadata: dict[str, SkillMetadata] = {}
         self._skill_cache: dict[str, Skill] = {}
-        self._state_lock = asyncio.Lock()
+        self._state_lock = threading.RLock()
         self._generation = 0
         self._strict_validation = strict_validation
 
@@ -69,7 +71,8 @@ class FilesystemSkillSource(SkillSource):
     @property
     def directories(self) -> list[Path]:
         """Return a copy of the directories this source has scanned."""
-        return list(self._directories)
+        with self._state_lock:
+            return list(self._directories)
 
     def add_directories(self, directories: Sequence[str | Path]) -> int:
         """Scan additional directories and index any skills found.
@@ -87,13 +90,15 @@ class FilesystemSkillSource(SkillSource):
             (matches the legacy ``registry.discover`` return value).
         """
         paths = [Path(d).expanduser().resolve() for d in directories]
-        self._directories.extend(paths)
+        discovered = self._discover_metadata(paths)
 
-        for metadata in self._discover_metadata(paths).values():
-            self._metadata.setdefault(metadata.name, metadata)
+        with self._state_lock:
+            self._directories.extend(paths)
+            for metadata in discovered.values():
+                self._metadata.setdefault(metadata.name, metadata)
 
-        self._generation += 1
-        return len(self._metadata)
+            self._generation += 1
+            return len(self._metadata)
 
     def _discover_metadata(self, paths: Sequence[Path]) -> dict[str, SkillMetadata]:
         metadata_by_name: dict[str, SkillMetadata] = {}
@@ -110,29 +115,29 @@ class FilesystemSkillSource(SkillSource):
         return metadata_by_name
 
     async def list_metadata(self) -> list[SkillMetadata]:
-        async with self._state_lock:
+        with self._state_lock:
             return list(self._metadata.values())
 
     async def has_skill(self, name: str) -> bool:
-        async with self._state_lock:
+        with self._state_lock:
             return name in self._metadata
 
     async def iter_names(self) -> list[str]:
-        async with self._state_lock:
+        with self._state_lock:
             return list(self._metadata)
 
     async def get_metadata(self, name: str) -> SkillMetadata | None:
-        async with self._state_lock:
+        with self._state_lock:
             return self._metadata.get(name)
 
     async def refresh(self) -> bool:
         for _attempt in range(self._MAX_REFRESH_RETRIES):
-            async with self._state_lock:
+            with self._state_lock:
                 directories = list(self._directories)
 
             refreshed_metadata = await asyncio.to_thread(self._discover_metadata, directories)
 
-            async with self._state_lock:
+            with self._state_lock:
                 if self._directories != directories:
                     # discover()/add_directories() ran while we were scanning.
                     # Retry against the new full directory set rather than
@@ -154,8 +159,8 @@ class FilesystemSkillSource(SkillSource):
         )
 
     async def load_skill(self, name: str) -> Skill:
-        while True:
-            async with self._state_lock:
+        for _attempt in range(self._MAX_LOAD_RETRIES):
+            with self._state_lock:
                 cached = self._skill_cache.get(name)
                 if cached is not None:
                     return cached
@@ -171,7 +176,7 @@ class FilesystemSkillSource(SkillSource):
 
             skill = await asyncio.to_thread(parse_full, metadata.location)
 
-            async with self._state_lock:
+            with self._state_lock:
                 cached = self._skill_cache.get(name)
                 if cached is not None:
                     return cached
@@ -181,6 +186,11 @@ class FilesystemSkillSource(SkillSource):
                     continue
                 self._skill_cache[name] = skill
                 return skill
+
+        raise SkillExecutionError(
+            f"Skill '{name}' could not be loaded because the filesystem catalog "
+            "changed repeatedly during parsing. Retry after discovery updates finish."
+        )
 
     async def list_files(self, skill_name: str) -> list[SkillFile]:
         try:
@@ -290,7 +300,7 @@ class FilesystemSkillSource(SkillSource):
 
     async def clear_cache(self) -> None:
         """Drop any cached fully-loaded skills."""
-        async with self._state_lock:
+        with self._state_lock:
             self._skill_cache.clear()
             self._generation += 1
 
@@ -300,10 +310,11 @@ class FilesystemSkillSource(SkillSource):
         This synchronous setup-time helper should not be called from another OS
         thread while async runtime reads are active.
         """
-        self._metadata.clear()
-        self._skill_cache.clear()
-        self._directories.clear()
-        self._generation += 1
+        with self._state_lock:
+            self._metadata.clear()
+            self._skill_cache.clear()
+            self._directories.clear()
+            self._generation += 1
 
 
 def _classify_bytes(data: bytes) -> tuple[str | None, bytes | None]:

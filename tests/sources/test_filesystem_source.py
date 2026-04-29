@@ -143,6 +143,37 @@ class TestFilesystemSourceLoading:
         assert "Updated instructions" in skill.instructions
         assert await source.load_skill("alpha") is skill
 
+    async def test_load_skill_raises_when_catalog_changes_do_not_stabilize(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_skill(tmp_path, "alpha", body="Original instructions.")
+        source = FilesystemSkillSource([tmp_path])
+        source._MAX_LOAD_RETRIES = 1
+
+        from adk_skills_agent.sources import filesystem
+
+        real_parse_full = filesystem.parse_full
+        parsed_original = threading.Event()
+        release_original = threading.Event()
+
+        def _parse_then_wait(path: Path):
+            skill = real_parse_full(path)
+            parsed_original.set()
+            if not release_original.wait(timeout=5):
+                raise TimeoutError("test did not release blocked parse")
+            return skill
+
+        monkeypatch.setattr(filesystem, "parse_full", _parse_then_wait)
+
+        load_task = asyncio.create_task(source.load_skill("alpha"))
+        assert await asyncio.to_thread(parsed_original.wait, 5)
+
+        await source.clear_cache()
+        release_original.set()
+
+        with pytest.raises(SkillExecutionError, match="could not be loaded"):
+            await load_task
+
     async def test_refresh_preserves_directories_added_during_scan(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
