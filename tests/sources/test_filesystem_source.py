@@ -8,6 +8,8 @@ that exercise the reference UX go through a registry here.
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from pathlib import Path
 
 import pytest
@@ -99,6 +101,157 @@ class TestFilesystemSourceLoading:
 
         assert await source.refresh() is True
         assert "Updated instructions" in (await source.load_skill("alpha")).instructions
+
+    async def test_refresh_prevents_in_flight_load_from_recaching_stale_skill(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        skill_dir = _write_skill(tmp_path, "alpha", body="Original instructions.")
+        source = FilesystemSkillSource([tmp_path])
+
+        from adk_skills_agent.sources import filesystem
+
+        real_parse_full = filesystem.parse_full
+        parsed_original = threading.Event()
+        release_original = threading.Event()
+        parse_calls = 0
+
+        def _parse_then_wait(path: Path):
+            nonlocal parse_calls
+            parse_calls += 1
+            skill = real_parse_full(path)
+            if parse_calls == 1:
+                parsed_original.set()
+                if not release_original.wait(timeout=5):
+                    raise TimeoutError("test did not release blocked parse")
+            return skill
+
+        monkeypatch.setattr(filesystem, "parse_full", _parse_then_wait)
+
+        load_task = asyncio.create_task(source.load_skill("alpha"))
+        assert await asyncio.to_thread(parsed_original.wait, 5)
+
+        (skill_dir / "SKILL.md").write_text(
+            "---\nname: alpha\ndescription: Test skill alpha\n---\n\nUpdated instructions.",
+            encoding="utf-8",
+        )
+        await source.refresh()
+
+        release_original.set()
+        skill = await load_task
+
+        assert parse_calls == 2
+        assert "Updated instructions" in skill.instructions
+        assert await source.load_skill("alpha") is skill
+
+    async def test_load_skill_raises_when_catalog_changes_do_not_stabilize(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _write_skill(tmp_path, "alpha", body="Original instructions.")
+        source = FilesystemSkillSource([tmp_path])
+        source._MAX_LOAD_RETRIES = 1
+
+        from adk_skills_agent.sources import filesystem
+
+        real_parse_full = filesystem.parse_full
+        parsed_original = threading.Event()
+        release_original = threading.Event()
+
+        def _parse_then_wait(path: Path):
+            skill = real_parse_full(path)
+            parsed_original.set()
+            if not release_original.wait(timeout=5):
+                raise TimeoutError("test did not release blocked parse")
+            return skill
+
+        monkeypatch.setattr(filesystem, "parse_full", _parse_then_wait)
+
+        load_task = asyncio.create_task(source.load_skill("alpha"))
+        assert await asyncio.to_thread(parsed_original.wait, 5)
+
+        await source.clear_cache()
+        release_original.set()
+
+        with pytest.raises(SkillExecutionError, match="could not be loaded"):
+            await load_task
+
+    async def test_refresh_preserves_directories_added_during_scan(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        first = tmp_path / "first"
+        first.mkdir()
+        second = tmp_path / "second"
+        second.mkdir()
+        _write_skill(first, "alpha")
+        _write_skill(second, "beta")
+
+        source = FilesystemSkillSource([first])
+
+        from adk_skills_agent.sources import filesystem
+
+        real_discover_skills = filesystem.discover_skills
+        refresh_started = threading.Event()
+        release_refresh = threading.Event()
+        blocked_refresh_once = False
+        main_thread = threading.current_thread()
+
+        def _discover_then_wait(paths: list[Path]):
+            nonlocal blocked_refresh_once
+            if threading.current_thread() is not main_thread and not blocked_refresh_once:
+                blocked_refresh_once = True
+                refresh_started.set()
+                if not release_refresh.wait(timeout=5):
+                    raise TimeoutError("test did not release blocked refresh")
+            return real_discover_skills(paths)
+
+        monkeypatch.setattr(filesystem, "discover_skills", _discover_then_wait)
+
+        refresh_task = asyncio.create_task(source.refresh())
+        assert await asyncio.to_thread(refresh_started.wait, 5)
+
+        source.add_directories([second])
+        release_refresh.set()
+
+        await refresh_task
+        assert source.directories == [first.resolve(), second.resolve()]
+        assert {metadata.name for metadata in await source.list_metadata()} == {"alpha", "beta"}
+
+    async def test_refresh_raises_when_directory_changes_do_not_stabilize(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        first = tmp_path / "first"
+        first.mkdir()
+        second = tmp_path / "second"
+        second.mkdir()
+        _write_skill(first, "alpha")
+        _write_skill(second, "beta")
+
+        source = FilesystemSkillSource([first])
+        source._MAX_REFRESH_RETRIES = 1
+
+        from adk_skills_agent.sources import filesystem
+
+        real_discover_skills = filesystem.discover_skills
+        refresh_started = threading.Event()
+        release_refresh = threading.Event()
+        main_thread = threading.current_thread()
+
+        def _discover_then_wait(paths: list[Path]):
+            if threading.current_thread() is not main_thread:
+                refresh_started.set()
+                if not release_refresh.wait(timeout=5):
+                    raise TimeoutError("test did not release blocked refresh")
+            return real_discover_skills(paths)
+
+        monkeypatch.setattr(filesystem, "discover_skills", _discover_then_wait)
+
+        refresh_task = asyncio.create_task(source.refresh())
+        assert await asyncio.to_thread(refresh_started.wait, 5)
+
+        source.add_directories([second])
+        release_refresh.set()
+
+        with pytest.raises(SkillExecutionError, match="could not stabilize"):
+            await refresh_task
 
     async def test_refresh_restores_previous_state_when_discovery_fails(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

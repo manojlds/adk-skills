@@ -40,6 +40,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SkillSource.iter_names` now returns a `list[str]` (rather than yielding an
   iterator) so it can be implemented as a single coroutine.
 
+### Removed
+- Removed the broken `adk-skills` console script declaration. This project does
+  not currently ship a CLI module.
+- Removed the legacy script-execution API (`run_script`, `ScriptResult`, and
+  `create_run_script_tool`). Applications should expose script execution through
+  their own ADK tools when they need it.
+
 ### Added
 - Module-level `_format_metadata_xml` / `_format_metadata_text` helpers in
   `adk_skills_agent.registry` so prompt-shape utilities can be reused without

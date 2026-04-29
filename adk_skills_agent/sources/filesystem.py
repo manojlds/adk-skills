@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import mimetypes
+import threading
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -38,6 +39,8 @@ class FilesystemSkillSource(SkillSource):
     """
 
     name = "filesystem"
+    _MAX_REFRESH_RETRIES = 10
+    _MAX_LOAD_RETRIES = 10
 
     def __init__(
         self,
@@ -58,6 +61,8 @@ class FilesystemSkillSource(SkillSource):
         self._directories: list[Path] = []
         self._metadata: dict[str, SkillMetadata] = {}
         self._skill_cache: dict[str, Skill] = {}
+        self._state_lock = threading.RLock()
+        self._generation = 0
         self._strict_validation = strict_validation
 
         if directories:
@@ -66,10 +71,15 @@ class FilesystemSkillSource(SkillSource):
     @property
     def directories(self) -> list[Path]:
         """Return a copy of the directories this source has scanned."""
-        return list(self._directories)
+        with self._state_lock:
+            return list(self._directories)
 
     def add_directories(self, directories: Sequence[str | Path]) -> int:
         """Scan additional directories and index any skills found.
+
+        This is a synchronous setup-time helper. Runtime reads are concurrency
+        guarded, but callers should avoid mutating the discovered directory set
+        from another OS thread while async reads are active.
 
         Args:
             directories: Directories to scan. ``~`` expansion and resolution
@@ -80,9 +90,19 @@ class FilesystemSkillSource(SkillSource):
             (matches the legacy ``registry.discover`` return value).
         """
         paths = [Path(d).expanduser().resolve() for d in directories]
-        self._directories.extend(paths)
+        discovered = self._discover_metadata(paths)
 
-        for metadata in discover_skills(paths):
+        with self._state_lock:
+            self._directories.extend(paths)
+            for metadata in discovered.values():
+                self._metadata.setdefault(metadata.name, metadata)
+
+            self._generation += 1
+            return len(self._metadata)
+
+    def _discover_metadata(self, paths: Sequence[Path]) -> dict[str, SkillMetadata]:
+        metadata_by_name: dict[str, SkillMetadata] = {}
+        for metadata in discover_skills(list(paths)):
             if self._strict_validation:
                 result = validate_skill_metadata(metadata, strict=True)
                 if not result.valid:
@@ -91,60 +111,86 @@ class FilesystemSkillSource(SkillSource):
             # Within a single filesystem source we silently skip duplicates
             # (first directory wins). Collisions across sources are handled
             # by the registry, which hard-fails.
-            self._metadata.setdefault(metadata.name, metadata)
-
-        return len(self._metadata)
+            metadata_by_name.setdefault(metadata.name, metadata)
+        return metadata_by_name
 
     async def list_metadata(self) -> list[SkillMetadata]:
-        return list(self._metadata.values())
+        with self._state_lock:
+            return list(self._metadata.values())
 
     async def has_skill(self, name: str) -> bool:
-        return name in self._metadata
+        with self._state_lock:
+            return name in self._metadata
 
     async def iter_names(self) -> list[str]:
-        return list(self._metadata)
+        with self._state_lock:
+            return list(self._metadata)
 
     async def get_metadata(self, name: str) -> SkillMetadata | None:
-        return self._metadata.get(name)
+        with self._state_lock:
+            return self._metadata.get(name)
 
     async def refresh(self) -> bool:
-        return await asyncio.to_thread(self._refresh_sync)
+        for _attempt in range(self._MAX_REFRESH_RETRIES):
+            with self._state_lock:
+                directories = list(self._directories)
 
-    def _refresh_sync(self) -> bool:
-        previous_metadata = dict(self._metadata)
-        previous_directories = list(self._directories)
-        previous_skill_cache = dict(self._skill_cache)
-        had_cached_skills = bool(self._skill_cache)
+            refreshed_metadata = await asyncio.to_thread(self._discover_metadata, directories)
 
-        if self._directories:
-            directories = list(self._directories)
-            self._metadata.clear()
-            self._directories.clear()
-            try:
-                self.add_directories(directories)
-            except Exception:
-                self._metadata = previous_metadata
-                self._directories = previous_directories
-                self._skill_cache = previous_skill_cache
-                raise
+            with self._state_lock:
+                if self._directories != directories:
+                    # discover()/add_directories() ran while we were scanning.
+                    # Retry against the new full directory set rather than
+                    # overwriting those additions with the stale snapshot.
+                    continue
 
-        self._skill_cache.clear()
-        return had_cached_skills or self._metadata != previous_metadata
+                previous_metadata = dict(self._metadata)
+                had_cached_skills = bool(self._skill_cache)
+
+                self._metadata = refreshed_metadata
+                self._skill_cache.clear()
+                self._generation += 1
+                return had_cached_skills or self._metadata != previous_metadata
+
+        raise SkillExecutionError(
+            "Filesystem skill refresh could not stabilize because directories "
+            "changed repeatedly during discovery. Retry refresh after discovery "
+            "updates finish."
+        )
 
     async def load_skill(self, name: str) -> Skill:
-        if name in self._skill_cache:
-            return self._skill_cache[name]
+        for _attempt in range(self._MAX_LOAD_RETRIES):
+            with self._state_lock:
+                cached = self._skill_cache.get(name)
+                if cached is not None:
+                    return cached
 
-        metadata = self._metadata.get(name)
-        if metadata is None:
-            raise SkillNotFoundError(
-                f"Skill '{name}' not found in filesystem source. "
-                f"Available skills: {list(self._metadata)}"
-            )
+                metadata = self._metadata.get(name)
+                generation = self._generation
+                available = list(self._metadata)
 
-        skill = await asyncio.to_thread(parse_full, metadata.location)
-        self._skill_cache[name] = skill
-        return skill
+            if metadata is None:
+                raise SkillNotFoundError(
+                    f"Skill '{name}' not found in filesystem source. Available skills: {available}"
+                )
+
+            skill = await asyncio.to_thread(parse_full, metadata.location)
+
+            with self._state_lock:
+                cached = self._skill_cache.get(name)
+                if cached is not None:
+                    return cached
+                # Refresh/cache-clear may have landed while parse_full was in
+                # a worker thread; never cache a result from an older catalog.
+                if generation != self._generation or self._metadata.get(name) != metadata:
+                    continue
+                self._skill_cache[name] = skill
+                return skill
+
+        raise SkillExecutionError(
+            f"Skill '{name}' could not be loaded because the filesystem catalog "
+            "changed repeatedly during parsing. Retry after discovery updates finish."
+        )
 
     async def list_files(self, skill_name: str) -> list[SkillFile]:
         try:
@@ -254,13 +300,21 @@ class FilesystemSkillSource(SkillSource):
 
     async def clear_cache(self) -> None:
         """Drop any cached fully-loaded skills."""
-        self._skill_cache.clear()
+        with self._state_lock:
+            self._skill_cache.clear()
+            self._generation += 1
 
     def clear(self) -> None:
-        """Forget all discovered skills and directories."""
-        self._metadata.clear()
-        self._skill_cache.clear()
-        self._directories.clear()
+        """Forget all discovered skills and directories.
+
+        This synchronous setup-time helper should not be called from another OS
+        thread while async runtime reads are active.
+        """
+        with self._state_lock:
+            self._metadata.clear()
+            self._skill_cache.clear()
+            self._directories.clear()
+            self._generation += 1
 
 
 def _classify_bytes(data: bytes) -> tuple[str | None, bytes | None]:

@@ -32,23 +32,30 @@ uv sync
 from google.adk.agents import Agent
 from adk_skills_agent import SkillsRegistry
 
-# Discover skills
-registry = SkillsRegistry()
-registry.discover(["./skills"])
+async def create_agent() -> Agent:
+    registry = SkillsRegistry()
+    registry.discover(["./skills"])
 
-# Create ADK agent with skills support
-agent = Agent(
-    name="assistant",
-    model="gemini-2.5-flash",
-    instruction="You are a helpful assistant.",
-    tools=[
-        registry.create_use_skill_tool(),      # Loads skills on-demand
-        registry.create_read_reference_tool(), # Optional: read reference files
-    ]
-)
+    # Pre-render the available skills once during async setup so the model can
+    # see what it may activate from the use_skill tool description.
+    available_skills_xml = await registry.to_prompt_xml()
+
+    return Agent(
+        name="assistant",
+        model="gemini-2.5-flash",
+        instruction="You are a helpful assistant.",
+        tools=[
+            registry.create_use_skill_tool(available_skills_xml=available_skills_xml),
+            registry.create_read_reference_tool(), # Optional: read reference files
+        ],
+    )
 
 # Agent can now discover and activate skills as needed!
 ```
+
+Runtime read methods are async in `0.4.0+`: await registry reads, prompt
+formatters, helper functions, `SkillsAgent.build()`, and the generated ADK tool
+callables.
 
 ## ✨ Features
 
@@ -121,8 +128,8 @@ registry.discover(["./skills"])
 use_skill = registry.create_use_skill_tool()
 read_reference = registry.create_read_reference_tool()
 
-skill = use_skill("web-scraper")
-ref = read_reference("web-scraper", "api-docs.md")
+skill = await use_skill("web-scraper")
+ref = await read_reference("web-scraper", "api-docs.md")
 print(ref["content"])
 ```
 
@@ -137,7 +144,7 @@ registry = SkillsRegistry()
 count = registry.discover(["./skills", "~/.adk/skills"])
 
 print(f"Found {count} skills")
-for meta in registry.list_metadata():
+for meta in await registry.list_metadata():
     print(f"  - {meta.name}: {meta.description}")
 ```
 
@@ -149,6 +156,7 @@ from adk_skills_agent import SkillsRegistry
 
 registry = SkillsRegistry()
 registry.discover(["./skills"])
+available_skills_xml = await registry.to_prompt_xml()
 
 # Skills are listed in the use_skill tool's description
 # Agent activates them on-demand by calling the tool
@@ -156,7 +164,7 @@ agent = Agent(
     name="assistant",
     model="gemini-2.5-flash",
     tools=[
-        registry.create_use_skill_tool(),    # <available_skills> in description
+        registry.create_use_skill_tool(available_skills_xml=available_skills_xml),
         registry.create_read_reference_tool(),
     ]
 )
@@ -168,26 +176,35 @@ agent = Agent(
 ### Multi-Agent with Different Skills
 
 ```python
+from google.adk.agents import Agent
+from adk_skills_agent import SkillsRegistry
+
 # Each agent gets its own registry with different skills
 
 # Customer service agent
 cs_registry = SkillsRegistry()
 cs_registry.discover(["./skills/customer-service"])
+cs_available_skills_xml = await cs_registry.to_prompt_xml()
 
 cs_agent = Agent(
     name="customer_service",
     model="gemini-2.5-flash",
-    tools=[cs_registry.create_use_skill_tool()]
+    tools=[cs_registry.create_use_skill_tool(available_skills_xml=cs_available_skills_xml)]
 )
 
 # Research agent
 research_registry = SkillsRegistry()
 research_registry.discover(["./skills/research"])
+research_available_skills_xml = await research_registry.to_prompt_xml()
 
 research_agent = Agent(
     name="researcher",
     model="gemini-2.5-flash",
-    tools=[research_registry.create_use_skill_tool()]
+    tools=[
+        research_registry.create_use_skill_tool(
+            available_skills_xml=research_available_skills_xml,
+        )
+    ]
 )
 ```
 
@@ -198,22 +215,23 @@ research_agent = Agent(
 Inject skills directly into system prompts instead of using tools:
 
 ```python
+from google.adk.agents import Agent
 from adk_skills_agent import SkillsRegistry
 
 registry = SkillsRegistry()
 registry.discover(["./skills"])
 
 # Get skills as XML for prompt injection
-xml_prompt = registry.to_prompt_xml()
+xml_prompt = await registry.to_prompt_xml()
 # Returns: <available_skills>...</available_skills>
 
 # Get skills as plain text
-text_prompt = registry.to_prompt_text()
+text_prompt = await registry.to_prompt_text()
 # Returns: Available Skills: - skill-name: description
 
 # Or inject directly into an instruction (recommended)
 base_instruction = "You are helpful."
-full_instruction = registry.inject_skills_prompt(base_instruction, format="xml")
+full_instruction = await registry.inject_skills_prompt(base_instruction, format="xml")
 # Returns: "You are helpful.\n\n<available_skills>...</available_skills>"
 
 # Use with agent
@@ -255,10 +273,10 @@ from adk_skills_agent.core.models import Skill, SkillMetadata
 class MyDatabaseSource(SkillSource):
     name = "my-db"
 
-    def list_metadata(self) -> list[SkillMetadata]:
+    async def list_metadata(self) -> list[SkillMetadata]:
         ...
 
-    def load_skill(self, name: str) -> Skill:
+    async def load_skill(self, name: str) -> Skill:
         ...
 
     # Implement list_files / read_file if your source stores multi-file
@@ -275,8 +293,8 @@ registry.add_source(MyDatabaseSource())    # your source
 #### Collision policy
 
 Skill names are globally unique across all registered sources. If two sources
-advertise a skill with the same name, `registry.list_metadata()` (and any lookup
-that needs to enumerate metadata) raises `SkillSourceCollisionError`. This is
+advertise a skill with the same name, `await registry.list_metadata()` (and any
+lookup that needs to enumerate metadata) raises `SkillSourceCollisionError`. This is
 intentional: the registry refuses to guess which version to serve and expects
 you to resolve the conflict at the source level (rename, namespace, or remove).
 
@@ -286,13 +304,13 @@ Each source owns its own storage and decides which capabilities it can offer:
 
 | Method | Required? | Notes |
 | --- | --- | --- |
-| `list_metadata()` | **Required** | Cheap skill discovery. |
-| `load_skill(name)` | **Required** | Full skill body on activation. The registry delegates every call to the owning source; it does not cache loaded `Skill` objects or guarantee object identity between calls. |
-| `has_skill(name)` | Optional | Default falls back to `list_metadata`; override for a cheap existence check. |
-| `refresh()` | Optional | Refresh source-owned catalogs/caches for dynamic stores. Return `True` when visible skills or cached content may have changed. |
-| `clear_cache()` | Optional | Drop source-owned loaded-content caches when callers need explicit invalidation. |
-| `list_files(skill_name)` | Optional | Needed whenever your source stores more than the prompt. |
-| `read_file(skill_name, path)` | Optional | Single file I/O primitive for the registry. |
+| `async list_metadata()` | **Required** | Cheap skill discovery. |
+| `async load_skill(name)` | **Required** | Full skill body on activation. The registry delegates every call to the owning source; it does not cache loaded `Skill` objects or guarantee object identity between calls. |
+| `async has_skill(name)` | Optional | Default falls back to `list_metadata`; override for a cheap existence check. |
+| `async refresh()` | Optional | Refresh source-owned catalogs/caches for dynamic stores. Return `True` when visible skills or cached content may have changed. |
+| `async clear_cache()` | Optional | Drop source-owned loaded-content caches when callers need explicit invalidation. |
+| `async list_files(skill_name)` | Optional | Needed whenever your source stores more than the prompt. |
+| `async read_file(skill_name, path)` | Optional | Single file I/O primitive for the registry. |
 
 Dynamic sources backed by databases, remote registries, object storage, or other
 mutable stores should override `refresh()` and `clear_cache()` so freshness stays
@@ -356,10 +374,10 @@ from adk_skills_agent import SkillsRegistry
 registry = SkillsRegistry()
 registry.discover(["./skills"])
 
-for meta in registry.list_files("pdf-processing"):
+for meta in await registry.list_files("pdf-processing"):
     print(meta.relative_path, meta.mime_type, meta.size_bytes)
 
-template = registry.read_file("pdf-processing", "assets/template.json")
+template = await registry.read_file("pdf-processing", "assets/template.json")
 assert template.is_text
 print(template.text_content)
 ```
@@ -376,10 +394,11 @@ root:
 - `"SKILL.md"` -> resolves as-is
 
 Binary files are rejected with a `SkillExecutionError` — use `read_file` for
-those. Paths that try to escape the skill directory (`..` segments, absolute
-paths, symlinks that leave the root) are refused. When a reference is missing,
-the error message includes an `Available: [...]` hint listing sibling files
-in the same directory (when the owning source supports `list_files`).
+those. Paths with `..` segments are refused before source access, and the
+filesystem source also refuses symlinks that leave the skill root. When a
+reference is missing, the error message includes an `Available: [...]` hint
+listing sibling files in the same directory (when the owning source supports
+`list_files`).
 
 ### Skills Validation
 
@@ -392,7 +411,7 @@ registry = SkillsRegistry()
 registry.discover(["./skills"])
 
 # Validate all skills
-results = registry.validate_all(strict=True)
+results = await registry.validate_all(strict=True)
 for name, result in results.items():
     if not result.valid:
         print(f"{name}: {result.errors}")
@@ -400,7 +419,7 @@ for name, result in results.items():
         print(f"{name}: {result.warnings}")
 
 # Validate specific skill
-result = registry.validate_skill_by_name("my-skill")
+result = await registry.validate_skill_by_name("my-skill")
 if result.valid:
     print("Skill is valid!")
 ```
@@ -420,12 +439,12 @@ agent = SkillsAgent(
     skills_directories=["./skills"],
     auto_inject_prompt=True,  # Inject skills into prompt
     prompt_format="xml",       # or "text"
-    validate_skills=True,      # Validate on discovery
+    validate_skills=True,      # Validate during build()
     include_reference_tool=True,
 )
 
 # Get the configured ADK agent
-adk_agent = agent.build()
+adk_agent = await agent.build()
 ```
 
 ### Helper Functions
@@ -445,7 +464,7 @@ agent = Agent(
 )
 
 # Add skills support
-agent = with_skills(agent, ["./skills"])
+agent = await with_skills(agent, ["./skills"])
 ```
 
 #### create_skills_agent()
@@ -455,7 +474,7 @@ Create an agent with skills in one call:
 ```python
 from adk_skills_agent import create_skills_agent
 
-agent = create_skills_agent(
+agent = await create_skills_agent(
     name="assistant",
     model="gemini-2.5-flash",
     instruction="You are helpful.",
@@ -472,7 +491,7 @@ from adk_skills_agent import inject_skills_prompt, SkillsRegistry
 
 # Pattern 1: Directory-based (discovers skills)
 instruction = "You are a helpful assistant."
-full_instruction = inject_skills_prompt(
+full_instruction = await inject_skills_prompt(
     instruction,
     directories=["./skills"],
     format="xml"  # or "text"
@@ -481,14 +500,14 @@ full_instruction = inject_skills_prompt(
 # Pattern 2: Registry-based (more efficient, reuses existing registry)
 registry = SkillsRegistry()
 registry.discover(["./skills"])
-full_instruction = inject_skills_prompt(
+full_instruction = await inject_skills_prompt(
     instruction,
     registry=registry,
     format="xml"
 )
 
 # Or use the registry method directly
-full_instruction = registry.inject_skills_prompt(instruction, format="xml")
+full_instruction = await registry.inject_skills_prompt(instruction, format="xml")
 ```
 
 ### Integration Patterns
@@ -500,12 +519,13 @@ Choose between **two alternative patterns** (not both simultaneously):
 # Skills listed in tool description, activated on-demand
 registry = SkillsRegistry()
 registry.discover(["./skills"])
+available_skills_xml = await registry.to_prompt_xml()
 agent = Agent(
     name="assistant",
     model="gemini-2.5-flash",
     instruction="You are helpful.",  # NO skills in prompt
     tools=[
-        registry.create_use_skill_tool(),  # <available_skills> in tool description
+        registry.create_use_skill_tool(available_skills_xml=available_skills_xml),
         registry.create_read_reference_tool(),
     ]
 )
@@ -516,25 +536,25 @@ agent = Agent(
 # Skills in system prompt, NOT in tool description (avoids duplication)
 registry = SkillsRegistry()
 registry.discover(["./skills"])
-prompt = registry.to_prompt_xml()
+prompt = await registry.to_prompt_xml()
 
 agent = Agent(
     name="assistant",
     model="gemini-2.5-flash",
     instruction=f"You are helpful.\n\n{prompt}",  # Skills in prompt
     tools=[
-        registry.create_use_skill_tool(include_skills_listing=False),  # No XML
+        registry.create_use_skill_tool(),  # No XML duplicated in tool description
         registry.create_read_reference_tool(),
     ]
 )
 
-# Or use SkillsAgent (handles this automatically):
-agent = SkillsAgent(
+skills_agent = SkillsAgent(
     name="assistant",
     model="gemini-2.5-flash",
     skills_directories=["./skills"],
     auto_inject_prompt=True,  # Automatically omits skills from tool description
-).build()
+)
+agent = await skills_agent.build()
 ```
 
 **Why Not Both?** Listing skills in both prompt and tool description wastes tokens with no benefit. Choose one pattern based on your needs.
@@ -549,7 +569,7 @@ agent = SkillsAgent(
 - [x] `use_skill` tool for activation
 - [x] `read_reference` tool
 - [x] Working examples
-- [x] 90%+ test coverage (129 tests passing)
+- [x] 300+ tests passing
 - [ ] Advanced executors and sandboxing
 - [ ] Advanced features
 - [ ] Public release
@@ -560,7 +580,7 @@ Run the examples to see it in action:
 
 **Basic Example:**
 ```bash
-python examples/basic_example.py
+uv run python examples/basic_example.py
 ```
 
 This demonstrates:
@@ -571,7 +591,7 @@ This demonstrates:
 
 **Advanced Example:**
 ```bash
-python examples/advanced_example.py
+uv run python examples/advanced_example.py
 ```
 
 This demonstrates:
@@ -600,7 +620,7 @@ git clone https://github.com/manojlds/adk-skills.git
 cd adk-skills
 uv sync --all-extras  # Creates venv and installs all dependencies
 source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
-uv run pytest  # Run tests (129 tests, 90%+ coverage)
+uv run pytest  # Run tests
 ```
 
 ## 🔗 Related Projects
@@ -621,6 +641,6 @@ Apache 2.0 License - see [LICENSE](LICENSE) file for details
 
 ---
 
-**Status**: MVP Complete | **Version**: 0.3.0 | **Python**: 3.9+
+**Status**: MVP Complete | **Version**: 0.4.0 | **Python**: 3.9+
 
 For questions or support, please open an issue on GitHub.

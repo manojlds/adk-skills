@@ -8,8 +8,9 @@ to duplicate:
    are resolved under ``references/`` for backwards compatibility; explicit
    prefixes (``references/``, ``assets/``, ``scripts/``) and the ``SKILL.md``
    filename pass through unchanged.
-2. Rejecting paths that try to escape the skill package (absolute paths,
-   ``..`` segments, leading slashes after normalisation, empty inputs).
+2. Validating skill-root-relative paths by normalising separators, stripping
+   ``.`` segments, and rejecting empty inputs, absolute paths, and ``..``
+   segments before raw file access.
 
 Both pieces live here as stable, pure functions so downstream skill source
 implementations (``ContentStudioRegistrySkillSource`` and friends) can reuse

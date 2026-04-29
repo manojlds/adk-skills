@@ -9,12 +9,13 @@ This example shows:
 5. Reading references
 """
 
+import asyncio
 from pathlib import Path
 
 from adk_skills_agent import SkillsRegistry
 
 
-def main() -> None:
+async def main() -> None:
     """Run basic example."""
     print("=" * 60)
     print("ADK Skills - Basic Example")
@@ -31,13 +32,14 @@ def main() -> None:
 
     # 2. List discovered skills
     print("2. Available skills:")
-    for metadata in registry.list_metadata():
+    for metadata in await registry.list_metadata():
         print(f"   - {metadata.name}: {metadata.description}")
     print()
 
     # 3. Create tools
     print("3. Creating ADK tools...")
-    use_skill = registry.create_use_skill_tool()
+    available_skills_xml = await registry.to_prompt_xml()
+    use_skill = registry.create_use_skill_tool(available_skills_xml=available_skills_xml)
     read_reference = registry.create_read_reference_tool()
     print("   ✓ Created use_skill tool")
     print("   ✓ Created read_reference tool")
@@ -52,7 +54,7 @@ def main() -> None:
 
     # 5. Activate a skill
     print("5. Activating 'calculator' skill...")
-    result = use_skill("calculator")
+    result = await use_skill("calculator")
     print(f"   ✓ Skill activated: {result['skill_name']}")
     print(f"   ✓ Base directory: {result['base_directory']}")
     print(f"   ✓ Has scripts: {result['has_scripts']}")
@@ -69,7 +71,7 @@ def main() -> None:
     # 6. Read a reference file
     print("6. Reading reference file...")
     try:
-        ref_result = read_reference("calculator", "operations.md")
+        ref_result = await read_reference("calculator", "operations.md")
         print(f"   ✓ Read reference: {ref_result['filename']}")
         print(f"   ✓ Content length: {len(ref_result['content'])} characters")
         print()
@@ -91,13 +93,14 @@ def main() -> None:
     print()
     print("   registry = SkillsRegistry()")
     print('   registry.discover(["./skills"])')
+    print("   available_skills_xml = await registry.to_prompt_xml()")
     print()
     print("   agent = Agent(")
     print('       name="assistant",')
     print('       model="gemini-2.5-flash",')
     print('       instruction="You are a helpful assistant.",')
     print("       tools=[")
-    print("           registry.create_use_skill_tool(),")
+    print("           registry.create_use_skill_tool(available_skills_xml=available_skills_xml),")
     print("           registry.create_read_reference_tool(),")
     print("       ]")
     print("   )")
@@ -110,4 +113,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
